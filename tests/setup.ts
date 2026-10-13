@@ -13,6 +13,11 @@ try {
 
 process.env.APP_ENV = 'test';
 
+// Tests never reach the real mail relay or SMS gateway, whatever .env says: a
+// workflow test would otherwise message every recipient its rules name.
+process.env.MAIL_DRIVER = 'log';
+process.env.SMS_DRIVER = 'log';
+
 // NODE_ENV is typed readonly by @types/node, so it is set through an indexed
 // write. Only defaulted, never overridden - a runner that already set it knows
 // better than this file does.

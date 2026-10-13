@@ -1,4 +1,5 @@
-import { prisma } from '@/server/infrastructure/db/client';
+import { createHash, randomBytes } from 'node:crypto';
+import { prisma, type TransactionClient } from '@/server/infrastructure/db/client';
 import {
   CURRENT_HASH_PARAMS,
   dummyVerify,
@@ -6,7 +7,9 @@ import {
   needsRehash,
   paramsToJson,
   verifyPassword,
+  type HashParams,
 } from '@/server/infrastructure/auth/password';
+import { serverEnv } from '@/lib/env';
 import {
   createSession,
   markReauthenticated,
@@ -325,15 +328,7 @@ export function validatePasswordComplexity(
   return problems;
 }
 
-export async function changePassword(
-  userId: string,
-  sessionId: string,
-  currentPassword: string,
-  newPassword: string,
-  context: LoginContext,
-): Promise<void> {
-  const policy = await loadPasswordPolicy();
-
+function assertMeetsPolicy(newPassword: string, policy: PasswordPolicy): void {
   const problems = validatePasswordComplexity(
     newPassword,
     policy.minLength,
@@ -344,13 +339,16 @@ export async function changePassword(
       newPassword: problems,
     });
   }
+}
 
-  const credential = await prisma.credential.findUnique({ where: { userId } });
-  if (!credential || !(await verifyPassword(currentPassword, credential.passwordHash))) {
-    throw new UnauthenticatedError('The current password is incorrect.');
-  }
-
-  if (await verifyPassword(newPassword, credential.passwordHash)) {
+/** Refuse the current password and the last few, per the configured history depth. */
+async function assertNotReused(
+  userId: string,
+  newPassword: string,
+  currentHash: string | null,
+  policy: PasswordPolicy,
+): Promise<void> {
+  if (currentHash && (await verifyPassword(newPassword, currentHash))) {
     throw new BusinessRuleError(
       'PASSWORD_REUSED',
       'The new password must differ from the current password.',
@@ -370,36 +368,70 @@ export async function changePassword(
       );
     }
   }
+}
 
-  const { hash, params } = await hashPassword(newPassword);
-  const expiresAt = new Date(Date.now() + policy.expiryDays * 86_400_000);
+/**
+ * Store a new password, moving the one it replaces (if any) into the history.
+ * Runs inside the caller's transaction.
+ */
+async function writePassword(
+  tx: TransactionClient,
+  userId: string,
+  newPassword: { hash: string; params: HashParams },
+  previousHash: string | null,
+  policy: PasswordPolicy,
+): Promise<void> {
+  if (previousHash) {
+    await tx.passwordHistory.create({ data: { userId, passwordHash: previousHash } });
+  }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.passwordHistory.create({
-      data: { userId, passwordHash: credential.passwordHash },
-    });
-    await tx.credential.update({
-      where: { userId },
-      data: {
-        passwordHash: hash,
-        algorithm: params.algorithm,
-        params: paramsToJson(params),
-        mustChange: false,
-        expiresAt,
-      },
-    });
-    // Trim history beyond the configured depth so the table does not grow
-    // without limit; keep one extra as a safety margin.
-    const stale = await tx.passwordHistory.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      skip: policy.historyDepth + 1,
-      select: { id: true },
-    });
-    if (stale.length > 0) {
-      await tx.passwordHistory.deleteMany({ where: { id: { in: stale.map((s) => s.id) } } });
-    }
+  const credential = {
+    passwordHash: newPassword.hash,
+    algorithm: newPassword.params.algorithm,
+    params: paramsToJson(newPassword.params),
+    mustChange: false,
+    expiresAt: new Date(Date.now() + policy.expiryDays * 86_400_000),
+  };
+  await tx.credential.upsert({
+    where: { userId },
+    update: credential,
+    create: { userId, ...credential },
   });
+
+  // Trim history beyond the configured depth so the table does not grow
+  // without limit; keep one extra as a safety margin.
+  const stale = await tx.passwordHistory.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+    skip: policy.historyDepth + 1,
+    select: { id: true },
+  });
+  if (stale.length > 0) {
+    await tx.passwordHistory.deleteMany({ where: { id: { in: stale.map((s) => s.id) } } });
+  }
+}
+
+export async function changePassword(
+  userId: string,
+  sessionId: string,
+  currentPassword: string,
+  newPassword: string,
+  context: LoginContext,
+): Promise<void> {
+  const policy = await loadPasswordPolicy();
+  assertMeetsPolicy(newPassword, policy);
+
+  const credential = await prisma.credential.findUnique({ where: { userId } });
+  if (!credential || !(await verifyPassword(currentPassword, credential.passwordHash))) {
+    throw new UnauthenticatedError('The current password is incorrect.');
+  }
+
+  await assertNotReused(userId, newPassword, credential.passwordHash, policy);
+
+  const hashed = await hashPassword(newPassword);
+  await prisma.$transaction((tx) =>
+    writePassword(tx, userId, hashed, credential.passwordHash, policy),
+  );
 
   // A password change is the standard response to a suspected compromise, so
   // every other session for this user ends here.
@@ -416,4 +448,154 @@ export async function changePassword(
     userAgent: context.userAgent,
     correlationId: context.correlationId,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Emailed set-up and reset links
+// ---------------------------------------------------------------------------
+
+/**
+ * A new account gets a SETUP link instead of a password, and an administrator's
+ * reset sends a RESET link instead of choosing one. Either way the password is
+ * only ever known to its owner.
+ *
+ * The token is 256 random bits, sent only in the email; the database holds its
+ * SHA-256, so a leaked copy of the table opens nothing. A link works once,
+ * expires after `security.password_link_hours`, and is replaced by the next one
+ * sent - only the latest email works.
+ */
+
+export type PasswordLinkPurpose = 'SETUP' | 'RESET';
+
+const LINK_TOKEN = /^[A-Za-z0-9_-]{43}$/;
+const INVALID_LINK =
+  'This link has expired or has already been used. Ask your administrator to send a new one.';
+
+function hashLinkToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+export interface IssuedPasswordLink {
+  url: string;
+  expiresAt: Date;
+  hours: number;
+}
+
+/** Create a link inside the caller's transaction, retiring any still outstanding. */
+export async function issuePasswordLink(
+  tx: TransactionClient,
+  userId: string,
+  purpose: PasswordLinkPurpose,
+  createdBy: string | null,
+): Promise<IssuedPasswordLink> {
+  const hours = await getNumberConfig('security.password_link_hours', 24);
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + hours * 3_600_000);
+
+  await tx.passwordToken.updateMany({ where: { userId, usedAt: null }, data: { usedAt: now } });
+
+  const token = randomBytes(32).toString('base64url');
+  await tx.passwordToken.create({
+    data: { userId, tokenHash: hashLinkToken(token), purpose, expiresAt, createdBy },
+  });
+
+  const url = new URL('/set-password', serverEnv.APP_URL);
+  url.searchParams.set('token', token);
+  return { url: url.toString(), expiresAt, hours };
+}
+
+async function findUsableLink(token: string) {
+  if (!LINK_TOKEN.test(token)) return null;
+  const link = await prisma.passwordToken.findUnique({
+    where: { tokenHash: hashLinkToken(token) },
+    select: {
+      id: true,
+      userId: true,
+      purpose: true,
+      expiresAt: true,
+      usedAt: true,
+      user: {
+        select: {
+          fullName: true,
+          email: true,
+          isActive: true,
+          credential: { select: { passwordHash: true } },
+        },
+      },
+    },
+  });
+  if (!link || link.usedAt || link.expiresAt <= new Date() || !link.user.isActive) return null;
+  return link;
+}
+
+/** What the set-password page shows for a link, or `null` when it cannot be used. */
+export async function checkPasswordLink(
+  token: string,
+): Promise<{ purpose: PasswordLinkPurpose; fullName: string; email: string } | null> {
+  const link = await findUsableLink(token);
+  return link
+    ? { purpose: link.purpose, fullName: link.user.fullName, email: link.user.email }
+    : null;
+}
+
+/**
+ * Set a password from an emailed link.
+ *
+ * The password is checked against the policy and the history before the link
+ * is spent, so a rejected password does not cost the user their link. The
+ * link is then consumed in the same transaction that stores the password, by a
+ * conditional update, so two submissions of one link cannot both succeed.
+ */
+export async function completePasswordLink(
+  token: string,
+  newPassword: string,
+  context: LoginContext,
+): Promise<{ email: string }> {
+  // Guessing a 256-bit token is hopeless; this only stops a script hammering the page.
+  assertRateLimit(`password-link:${context.ipAddress ?? 'unknown'}`, 20, 300);
+
+  const link = await findUsableLink(token);
+  if (!link) throw new BusinessRuleError('PASSWORD_LINK_INVALID', INVALID_LINK);
+
+  const policy = await loadPasswordPolicy();
+  assertMeetsPolicy(newPassword, policy);
+  const currentHash = link.user.credential?.passwordHash ?? null;
+  await assertNotReused(link.userId, newPassword, currentHash, policy);
+
+  const hashed = await hashPassword(newPassword);
+  const revoked = await prisma.$transaction(async (tx) => {
+    const now = new Date();
+    const consumed = await tx.passwordToken.updateMany({
+      where: { id: link.id, usedAt: null, expiresAt: { gt: now } },
+      data: { usedAt: now },
+    });
+    if (consumed.count !== 1) throw new BusinessRuleError('PASSWORD_LINK_INVALID', INVALID_LINK);
+
+    await writePassword(tx, link.userId, hashed, currentHash, policy);
+    // A reset answers a forgotten or compromised password: the lockout goes,
+    // and so does every session the old password opened.
+    await tx.user.update({
+      where: { id: link.userId },
+      data: { failedAttempts: 0, lockedUntil: null },
+    });
+    const sessions = await tx.session.updateMany({
+      where: { userId: link.userId, revokedAt: null },
+      data: { revokedAt: now },
+    });
+    return sessions.count;
+  });
+
+  await recordStandalone({
+    actorId: link.userId,
+    actorRole: null,
+    action: 'PASSWORD_CHANGED',
+    entity: 'Credential',
+    entityId: link.userId,
+    after: { via: link.purpose === 'SETUP' ? 'SETUP_LINK' : 'RESET_LINK', otherSessionsRevoked: revoked },
+    ipAddress: context.ipAddress,
+    userAgent: context.userAgent,
+    correlationId: context.correlationId,
+  });
+
+  return { email: link.user.email };
 }

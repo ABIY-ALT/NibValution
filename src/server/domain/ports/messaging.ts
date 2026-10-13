@@ -11,6 +11,14 @@ export interface OutboundMessage {
   readonly to: string;
   readonly subject: string;
   readonly text: string;
+  /** An HTML alternative to `text`, for email. Clients that cannot show it fall back to the text. */
+  readonly html?: string;
+  /**
+   * Images the HTML shows as `<img src="cid:...">`. Carried inside the message
+   * rather than linked, so they appear without the recipient's client having
+   * to reach the application's server.
+   */
+  readonly inlineImages?: readonly { readonly cid: string; readonly path: string }[];
 }
 
 export interface MessageSender {

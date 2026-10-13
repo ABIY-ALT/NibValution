@@ -1,20 +1,30 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '@/server/infrastructure/db/client';
 import { record, diff } from '@/server/infrastructure/audit/audit-service';
-import { withTransaction } from '@/server/infrastructure/db/client';
+import { withTransaction, type TransactionClient } from '@/server/infrastructure/db/client';
 import { invalidateConfigurationCache } from './configuration-service';
 import { assertPermission, type Actor } from '@/server/domain/rbac/authorize';
 import { PERMISSIONS } from '@/server/domain/rbac/permissions';
 import { validateThresholdSet } from '@/server/domain/approval/routing';
 import { GUIDELINE_PREFIX, isGuidelineKey } from '@/server/domain/valuation/civil/guideline';
 import { dec } from '@/lib/money';
-import { BusinessRuleError, ConflictError, NotFoundError } from '@/lib/errors';
+import { BusinessRuleError, ConflictError, NotFoundError, ValidationError } from '@/lib/errors';
+import { logger } from '@/lib/logger';
+import { getMailer } from '@/server/infrastructure/messaging';
+import { brandedEmail } from '@/server/infrastructure/messaging/branded-email';
+import {
+  issuePasswordLink,
+  type IssuedPasswordLink,
+  type PasswordLinkPurpose,
+} from './auth-service';
 import {
   deriveCode,
   type CreateDocumentCategoryInput,
   type CreatePropertyCategoryInput,
   type CreateRequestTypeInput,
   type CreateRoleInput,
+  type CreateUserInput,
+  type UserProfileInput,
 } from '@/lib/validation/admin';
 import type { PublishParameterInput } from '@/lib/validation/parameters';
 import type { Discipline, RoleCode } from '@/server/domain/shared/enums';
@@ -66,12 +76,13 @@ const USER_SELECT = {
   employeeId: true,
   email: true,
   fullName: true,
+  phone: true,
   discipline: true,
   isActive: true,
   lockedUntil: true,
   lastLoginAt: true,
-  organization: { select: { code: true, name: true } },
-  department: { select: { code: true, name: true } },
+  organization: { select: { id: true, code: true, name: true } },
+  department: { select: { id: true, code: true, name: true } },
   roles: { select: { role: { select: { code: true, name: true } } } },
   credential: { select: { mustChange: true, expiresAt: true } },
   _count: { select: { makerCases: true, checkerCases: true } },
@@ -302,6 +313,383 @@ export async function setUserDiscipline(
 export async function listRolesForAssignment(actor: Actor) {
   assertPermission(actor, PERMISSIONS.USER_MANAGE);
   return prisma.role.findMany({ orderBy: { code: 'asc' }, select: { code: true, name: true } });
+}
+
+/** The units and departments an account can be placed in. */
+export async function listUserFormOptions(actor: Actor) {
+  assertPermission(actor, PERMISSIONS.USER_MANAGE);
+  const [organizations, departments] = await Promise.all([
+    prisma.organization.findMany({
+      where: { isActive: true },
+      orderBy: [{ type: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true, type: true },
+    }),
+    prisma.department.findMany({
+      where: { isActive: true },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true },
+    }),
+  ]);
+  return { organizations, departments };
+}
+
+const PROFILE_SELECT = {
+  employeeId: true,
+  fullName: true,
+  email: true,
+  phone: true,
+  discipline: true,
+  organization: { select: { name: true } },
+  department: { select: { name: true } },
+} as const;
+
+/** The account as the audit trail records it: names a reader recognises, not foreign keys. */
+function profileSnapshot(user: Prisma.UserGetPayload<{ select: typeof PROFILE_SELECT }>) {
+  return {
+    employeeId: user.employeeId,
+    fullName: user.fullName,
+    email: user.email,
+    phone: user.phone,
+    discipline: user.discipline,
+    organization: user.organization?.name ?? null,
+    department: user.department?.name ?? null,
+  };
+}
+
+/** Exactly the editable columns, whatever else the caller's object carries. */
+function profileData(input: UserProfileInput) {
+  return {
+    employeeId: input.employeeId,
+    fullName: input.fullName,
+    email: input.email,
+    phone: input.phone,
+    organizationId: input.organizationId,
+    departmentId: input.departmentId,
+    discipline: input.discipline,
+  };
+}
+
+/**
+ * Refuse an employee ID or email address another account already holds, and a
+ * unit or department that does not exist - as field errors, so the form can say
+ * which field is wrong instead of failing on a database constraint.
+ */
+async function assertProfileAvailable(
+  tx: TransactionClient,
+  input: UserProfileInput,
+  exceptUserId?: string,
+): Promise<void> {
+  const errors: Record<string, string[]> = {};
+
+  const clashes = await tx.user.findMany({
+    where: {
+      OR: [
+        { employeeId: input.employeeId },
+        { email: { equals: input.email, mode: 'insensitive' } },
+      ],
+      ...(exceptUserId ? { NOT: { id: exceptUserId } } : {}),
+    },
+    select: { employeeId: true, email: true, fullName: true },
+  });
+  for (const clash of clashes) {
+    if (clash.employeeId === input.employeeId) {
+      errors.employeeId = [`${clash.fullName} already has this employee ID.`];
+    }
+    if (clash.email.toLowerCase() === input.email) {
+      errors.email = [`${clash.fullName} already uses this email address.`];
+    }
+  }
+
+  if (input.organizationId) {
+    const found = await tx.organization.count({ where: { id: input.organizationId } });
+    if (found === 0) errors.organizationId = ['That unit no longer exists. Choose another.'];
+  }
+  if (input.departmentId) {
+    const found = await tx.department.count({ where: { id: input.departmentId } });
+    if (found === 0) errors.departmentId = ['That department no longer exists. Choose another.'];
+  }
+
+  if (Object.keys(errors).length > 0) {
+    throw new ValidationError('Please correct the highlighted fields.', errors);
+  }
+}
+
+export async function updateUserProfile(
+  actor: Actor,
+  userId: string,
+  input: UserProfileInput,
+  ctx: AuditContextInput,
+): Promise<void> {
+  assertPermission(actor, PERMISSIONS.USER_MANAGE);
+
+  await withTransaction(async (tx) => {
+    const current = await tx.user.findUnique({ where: { id: userId }, select: PROFILE_SELECT });
+    if (!current) throw new NotFoundError('The user was not found.');
+
+    await assertProfileAvailable(tx, input, userId);
+
+    const updated = await tx.user.update({
+      where: { id: userId },
+      data: profileData(input),
+      select: PROFILE_SELECT,
+    });
+
+    const changes = diff(profileSnapshot(current), profileSnapshot(updated));
+    // Saving an unchanged form is not an event worth an audit row.
+    if (Object.keys(changes.after).length === 0) return;
+
+    await record(tx, {
+      ...contextFor(actor, ctx),
+      action: 'USER_UPDATED',
+      entity: 'User',
+      entityId: userId,
+      before: changes.before,
+      after: changes.after,
+    });
+  });
+}
+
+/**
+ * A set-up or reset link just issued for an account.
+ *
+ * The URL is handed back so the administrator can pass it on when the email
+ * was not sent; it is never stored, logged or audited.
+ */
+export interface IssuedLink {
+  userId: string;
+  /** The account's email address, where the link went if it was sent. */
+  address: string;
+  purpose: PasswordLinkPurpose;
+  url: string;
+  /** How long the link stays valid. */
+  hours: number;
+  /** What happened to the email, when one was asked for. */
+  email: 'sent' | 'failed' | 'disabled' | 'skipped';
+}
+
+/**
+ * Open an account for a member of staff.
+ *
+ * The account has no password until its owner sets one from the emailed link,
+ * so the administrator never chooses - and never knows - it. Until then it
+ * cannot be signed in to at all.
+ */
+export async function createUser(
+  actor: Actor,
+  input: CreateUserInput,
+  ctx: AuditContextInput,
+): Promise<IssuedLink> {
+  assertPermission(actor, PERMISSIONS.USER_MANAGE);
+  if (input.roles.length > 0) assertPermission(actor, PERMISSIONS.ROLE_MANAGE);
+
+  const { roles: roleCodes, sendEmail, ...profile } = input;
+
+  const { user, link } = await withTransaction(async (tx) => {
+    await assertProfileAvailable(tx, profile);
+
+    const roles = await tx.role.findMany({
+      where: { code: { in: roleCodes } },
+      select: { id: true, code: true },
+    });
+    if (roles.length !== new Set(roleCodes).size) {
+      throw new BusinessRuleError(
+        'UNKNOWN_ROLE',
+        'One or more of the selected roles do not exist.',
+      );
+    }
+
+    const created = await tx.user.create({
+      data: {
+        ...profileData(profile),
+        roles: { create: roles.map((role) => ({ roleId: role.id, assignedBy: actor.id })) },
+      },
+      select: { id: true, ...PROFILE_SELECT },
+    });
+
+    const issued = await issuePasswordLink(tx, created.id, 'SETUP', actor.id);
+
+    await record(tx, {
+      ...contextFor(actor, ctx),
+      action: 'USER_CREATED',
+      entity: 'User',
+      entityId: created.id,
+      before: null,
+      after: {
+        ...profileSnapshot(created),
+        roles: roles.map((role) => role.code).sort(),
+        setupLinkEmailed: sendEmail,
+      },
+    });
+
+    return { user: created, link: issued };
+  });
+
+  return {
+    userId: user.id,
+    address: user.email,
+    purpose: 'SETUP',
+    url: link.url,
+    hours: link.hours,
+    email: sendEmail ? await sendPasswordLinkEmail(user, 'SETUP', link) : 'skipped',
+  };
+}
+
+/**
+ * Send a user a link to choose a new password.
+ *
+ * Their current password keeps working until they use the link - an
+ * administrator's reset must not lock out someone who never asked for it.
+ * Setting the new password is what ends their sessions and clears a lockout.
+ * An account whose owner never set a password gets a fresh set-up link instead.
+ */
+export async function sendPasswordLink(
+  actor: Actor,
+  userId: string,
+  options: { sendEmail: boolean },
+  ctx: AuditContextInput,
+): Promise<IssuedLink> {
+  assertPermission(actor, PERMISSIONS.USER_MANAGE);
+
+  if (userId === actor.id) {
+    throw new BusinessRuleError(
+      'SELF_PASSWORD_RESET',
+      'Use "Change password" to change your own password.',
+    );
+  }
+
+  const { user, purpose, link } = await withTransaction(async (tx) => {
+    const target = await tx.user.findUnique({
+      where: { id: userId },
+      select: { fullName: true, email: true, isActive: true, credential: { select: { id: true } } },
+    });
+    if (!target) throw new NotFoundError('The user was not found.');
+    if (!target.isActive) {
+      throw new BusinessRuleError(
+        'USER_INACTIVE',
+        'This account is deactivated. Activate it before sending a password link.',
+      );
+    }
+
+    const kind: PasswordLinkPurpose = target.credential ? 'RESET' : 'SETUP';
+    const issued = await issuePasswordLink(tx, userId, kind, actor.id);
+
+    await record(tx, {
+      ...contextFor(actor, ctx),
+      action: 'PASSWORD_RESET_REQUESTED',
+      entity: 'Credential',
+      entityId: userId,
+      before: null,
+      after: { purpose: kind, validHours: issued.hours, emailRequested: options.sendEmail },
+    });
+
+    return { user: target, purpose: kind, link: issued };
+  });
+
+  return {
+    userId,
+    address: user.email,
+    purpose,
+    url: link.url,
+    hours: link.hours,
+    email: options.sendEmail ? await sendPasswordLinkEmail(user, purpose, link) : 'skipped',
+  };
+}
+
+/** End every live session of a user - "sign out everywhere" - without touching the account. */
+export async function revokeUserSessions(
+  actor: Actor,
+  userId: string,
+  ctx: AuditContextInput,
+): Promise<number> {
+  assertPermission(actor, PERMISSIONS.USER_MANAGE);
+
+  if (userId === actor.id) {
+    throw new BusinessRuleError(
+      'SELF_SESSION_REVOKE',
+      'Use "Sign out" to end your own session.',
+    );
+  }
+
+  return withTransaction(async (tx) => {
+    const exists = await tx.user.count({ where: { id: userId } });
+    if (exists === 0) throw new NotFoundError('The user was not found.');
+
+    const revoked = await tx.session.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    await record(tx, {
+      ...contextFor(actor, ctx),
+      action: 'SESSIONS_REVOKED',
+      entity: 'User',
+      entityId: userId,
+      after: { sessionsRevoked: revoked.count },
+    });
+
+    return revoked.count;
+  });
+}
+
+/**
+ * Email a set-up or reset link to its owner, in the bank's account-email design.
+ *
+ * Sent after the transaction commits: a mail relay that is down must not undo
+ * the change, and the administrator is handed the link to pass on another way.
+ * The log driver records only the recipient and subject, never the body, so the
+ * link does not reach the server log either.
+ */
+async function sendPasswordLinkEmail(
+  user: { fullName: string; email: string },
+  purpose: PasswordLinkPurpose,
+  link: IssuedPasswordLink,
+): Promise<IssuedLink['email']> {
+  const mailer = getMailer();
+  if (mailer.name === 'log') return 'disabled';
+
+  const validFor = link.hours === 1 ? '1 hour' : `${link.hours} hours`;
+  const message =
+    purpose === 'SETUP'
+      ? brandedEmail({
+          to: user.email,
+          subject: 'Set Up Your NIB Property Valuation Password',
+          heading: 'Activate Your Account',
+          greeting: `Hello ${user.fullName},`,
+          paragraphs: [
+            'Your account has been created on the NIB Property Valuation System.',
+            `You sign in with your email address: ${user.email}`,
+            'Click the button below to set your password and activate your account.',
+          ],
+          strong: [user.email, validFor],
+          validity: `This link is valid for ${validFor} and can only be used once.`,
+          action: { label: 'Set Up My Password', url: link.url },
+          note: 'If you did not expect this email, please contact your IT administrator immediately. Do not share this link with anyone.',
+        })
+      : brandedEmail({
+          to: user.email,
+          subject: 'Your NIB Property Valuation Password Reset Request',
+          heading: 'Your Password Reset Request',
+          greeting: `Hello ${user.fullName},`,
+          paragraphs: [
+            'An administrator has initiated a password reset for your NIB Property Valuation System account.',
+            'You can reset your password by clicking the link below.',
+          ],
+          strong: [validFor],
+          validity: `This link is valid for ${validFor} and can only be used once.`,
+          action: { label: 'Reset Your Password', url: link.url },
+          note: 'If you did not expect this reset, you can safely ignore this email or contact IT security. Your current password keeps working until you choose a new one.',
+        });
+
+  try {
+    await mailer.send(message);
+    return 'sent';
+  } catch (error) {
+    logger.warn(
+      { err: error instanceof Error ? error.message : String(error) },
+      'Password link email could not be sent',
+    );
+    return 'failed';
+  }
 }
 
 // ---------------------------------------------------------------------------

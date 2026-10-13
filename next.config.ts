@@ -31,7 +31,7 @@ const nextConfig: NextConfig = {
   // file and can settle on a parent directory - which on a developer machine
   // may be the user's home folder.
   turbopack: { root: path.resolve(import.meta.dirname) },
-  serverExternalPackages: ['@node-rs/argon2', '@prisma/client', 'pino'],
+  serverExternalPackages: ['@node-rs/argon2', '@prisma/client', 'pino', 'nodemailer'],
   typedRoutes: false,
   // Set per release when more than one instance serves the application, so a
   // browser holding the previous release's pages reloads instead of calling

@@ -63,10 +63,17 @@ const serverSchema = z
     CLAMAV_PORT: z.coerce.number().int().optional(),
 
     MAIL_DRIVER: z.enum(['log', 'smtp']).default('log'),
-    SMTP_HOST: z.string().optional(),
-    SMTP_PORT: z.coerce.number().int().optional(),
-    SMTP_USER: z.string().optional(),
+    SMTP_HOST: z.string().trim().optional(),
+    SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+    SMTP_USER: z.string().trim().optional(),
     SMTP_PASSWORD: z.string().optional(),
+    /**
+     * Accept the relay's certificate even when it is self-signed or issued by an
+     * internal CA that Node does not trust. The connection is still encrypted;
+     * only the server's identity goes unchecked. Where the bank's CA certificate
+     * is available, NODE_EXTRA_CA_CERTS is the better fix.
+     */
+    SMTP_ALLOW_SELF_SIGNED: booleanish.default(false),
     MAIL_FROM: z.string().default('NIB Property Valuation <no-reply@nibbank.example>'),
 
     SMS_DRIVER: z.enum(['log', 'http']).default('log'),
@@ -151,12 +158,35 @@ const serverSchema = z
 
 export type ServerEnv = z.infer<typeof serverSchema>;
 
+/**
+ * The bank's other systems name their mail settings EMAIL_*; those names are
+ * accepted too, so one mail configuration can be shared between them. The
+ * SMTP_* / MAIL_FROM name wins when both are set.
+ */
+const MAIL_ALIASES = {
+  SMTP_HOST: 'EMAIL_HOST',
+  SMTP_PORT: 'EMAIL_PORT',
+  SMTP_USER: 'EMAIL_USER',
+  SMTP_PASSWORD: 'EMAIL_PASS',
+  SMTP_ALLOW_SELF_SIGNED: 'EMAIL_ALLOW_SELF_SIGNED',
+  MAIL_FROM: 'EMAIL_FROM',
+} as const;
+
+function withMailAliases(env: NodeJS.ProcessEnv): Record<string, string | undefined> {
+  const resolved: Record<string, string | undefined> = { ...env };
+  for (const [name, alias] of Object.entries(MAIL_ALIASES)) {
+    // A blank value counts as unset, as `SMTP_HOST=` in a template means it.
+    resolved[name] = env[name] || env[alias] || undefined;
+  }
+  return resolved;
+}
+
 let cached: ServerEnv | null = null;
 
 export function loadServerEnv(): ServerEnv {
   if (cached) return cached;
 
-  const parsed = serverSchema.safeParse(process.env);
+  const parsed = serverSchema.safeParse(withMailAliases(process.env));
   if (!parsed.success) {
     const details = parsed.error.issues
       .map((issue) => `  - ${issue.path.join('.') || '(root)'}: ${issue.message}`)

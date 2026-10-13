@@ -16,8 +16,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 const SESSION_COOKIE_NAME = 'nib_session';
 
-// /api/cron authenticates with its own bearer token, not a session.
-const PUBLIC_PATHS = ['/login', '/api/health', '/api/cron'];
+// /api/cron authenticates with its own bearer token, not a session; an emailed
+// /set-password link is its own credential.
+const PUBLIC_PATHS = ['/login', '/set-password', '/api/health', '/api/cron'];
 
 /** A caller-supplied correlation id is kept only if it looks like one. */
 const CORRELATION_ID = /^[A-Za-z0-9._-]{8,64}$/;

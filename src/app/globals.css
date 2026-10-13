@@ -186,6 +186,13 @@
     -webkit-text-size-adjust: 100%;
   }
 
+  /* Edge draws its own reveal eye in password fields; PasswordInput has one
+     already, and two side by side read as a glitch. */
+  input[type='password']::-ms-reveal,
+  input[type='password']::-ms-clear {
+    display: none;
+  }
+
   body {
     background-color: var(--color-app);
     color: var(--color-ink);

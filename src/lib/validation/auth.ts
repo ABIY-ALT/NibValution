@@ -43,6 +43,18 @@ export const changePasswordSchema = z
   });
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
+/** Choosing a password from an emailed set-up or reset link. */
+export const setPasswordSchema = z
+  .object({
+    token: z.string().min(1).max(100),
+    newPassword: z.string().min(1, 'Enter a new password.').max(256),
+    confirmPassword: z.string().min(1, 'Confirm the new password.'),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: 'The two passwords do not match.',
+    path: ['confirmPassword'],
+  });
+
 export const forgotPasswordSchema = z.object({
   identifier: z.string().trim().min(3, 'Enter your institutional email address.').max(254),
 });

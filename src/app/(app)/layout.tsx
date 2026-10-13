@@ -3,6 +3,7 @@ import { getSession } from '@/server/application/actor';
 import { logoutAction } from '@/server/actions/auth-actions';
 import { loadNavBadges } from '@/server/application/case-service';
 import { loadHeaderProfile } from '@/server/application/profile-service';
+import { loadPasswordPolicy } from '@/server/application/auth-service';
 import { loadNotificationFeed } from '@/server/application/notification-service';
 import { ShellProvider, Sidebar } from '@/components/navigation/sidebar';
 import { upcomingItems, visibleSections } from '@/components/navigation/nav-config';
@@ -32,12 +33,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // minutes, in the background, never delaying the page.
   scheduleSlaSweep();
 
-  const [badges, profile, feed] = await Promise.all([
+  const [badges, profile, feed, policy] = await Promise.all([
     loadNavBadges(actor),
     loadHeaderProfile(actor),
     // The bell and the Notification Centre read the same feed, so the number on
     // the badge is the number of items the panel can actually show.
     loadNotificationFeed(actor, { limit: 6 }),
+    // For the change-password pop-up's checklist.
+    loadPasswordPolicy(),
   ]);
 
   const sections = visibleSections(actor.permissions);
@@ -77,6 +80,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <AppHeader
               signOut={logoutAction}
               notices={feed.notices}
+              passwordRules={{
+                minLength: policy.minLength,
+                requireComplexity: policy.requireComplexity,
+                historyDepth: policy.historyDepth,
+              }}
               user={{
                 fullName: actor.fullName,
                 email: profile.email,

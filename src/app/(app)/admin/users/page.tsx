@@ -2,6 +2,7 @@ import { Info, KeyRound, Lock, UserCheck, Users, UserX } from 'lucide-react';
 import { requireActor } from '@/server/application/actor';
 import {
   listRolesForAssignment,
+  listUserFormOptions,
   listUsers,
   type UserListFilter,
 } from '@/server/application/admin-service';
@@ -32,6 +33,7 @@ import {
   type Discipline,
   type RoleCode,
 } from '@/server/domain/shared/enums';
+import { AddUserDialog } from './add-user-dialog';
 import { UserRow } from './user-row';
 
 // Reads live data on every request; an administrator must never act on a
@@ -87,10 +89,17 @@ export default async function UsersPage({
     page: Number(params.page) || 1,
   };
 
-  const [result, roles] = await Promise.all([
+  const [result, roles, options] = await Promise.all([
     listUsers(actor, filter),
     listRolesForAssignment(actor),
+    listUserFormOptions(actor),
   ]);
+
+  const roleChoices = roles.map((r) => ({
+    code: r.code as RoleCode,
+    label: ROLE_LABELS[r.code as RoleCode] ?? r.name,
+  }));
+  const canAssignRoles = actor.permissions.has(PERMISSIONS.ROLE_MANAGE);
 
   const isFiltered = Boolean(filter.search || filter.role || filter.discipline || filter.status);
 
@@ -108,11 +117,14 @@ export default async function UsersPage({
       <PageHero
         eyebrow="Administration"
         title="Users"
-        subtitle="Accounts, roles and discipline. A user who has acted in the system is deactivated rather than deleted, so the audit trail always retains the identity behind an action."
+        subtitle="Accounts, roles and discipline. Click a name, or use the ⋯ menu, to edit details, change roles, reset a password or deactivate. A user who has acted in the system is deactivated rather than deleted, so the audit trail always retains the identity behind an action."
         actions={
-          <Badge variant="brand" size="lg">
-            {result.stats.total.toLocaleString()} accounts
-          </Badge>
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge variant="brand" size="lg">
+              {result.stats.total.toLocaleString()} accounts
+            </Badge>
+            <AddUserDialog options={options} roles={roleChoices} canAssignRoles={canAssignRoles} />
+          </div>
         }
       />
 
@@ -251,23 +263,28 @@ export default async function UsersPage({
                       employeeId: user.employeeId,
                       fullName: user.fullName,
                       email: user.email,
+                      phone: user.phone,
                       discipline: user.discipline,
                       isActive: user.isActive,
                       isLocked: Boolean(user.lockedUntil && user.lockedUntil > new Date()),
                       mustChange: user.credential?.mustChange ?? false,
-                      organization: user.organization?.name ?? null,
-                      department: user.department?.name ?? null,
+                      hasPassword: user.credential !== null,
+                      organization: user.organization
+                        ? { id: user.organization.id, name: user.organization.name }
+                        : null,
+                      department: user.department
+                        ? { id: user.department.id, name: user.department.name }
+                        : null,
                       roles: user.roles.map((r) => r.role.code as RoleCode),
                       makerCases: user._count.makerCases,
                       checkerCases: user._count.checkerCases,
                       lastLogin: formatDate(user.lastLoginAt),
                       lastLoginParts: dateParts(user.lastLoginAt),
                     }}
-                    allRoles={roles.map((r) => ({
-                      code: r.code as RoleCode,
-                      label: ROLE_LABELS[r.code as RoleCode] ?? r.name,
-                    }))}
+                    allRoles={roleChoices}
+                    options={options}
                     isSelf={user.id === actor.id}
+                    canAssignRoles={canAssignRoles}
                   />
                 ))
               )}

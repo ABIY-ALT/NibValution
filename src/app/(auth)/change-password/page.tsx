@@ -1,28 +1,39 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/server/application/actor';
+import { loadPasswordPolicy } from '@/server/application/auth-service';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ChangePasswordForm } from './change-password-form';
+import { ChangePasswordForm } from '@/components/auth/change-password-form';
 
 /**
- * The change-password screen.
+ * The forced change-password screen: where a user whose password must be
+ * replaced (an initial or expired one) is held before reaching the system.
  *
- * Deliberately bare: a heading, the three fields and the button. Everything the
- * card used to carry alongside them - the policy checklist, the initial-password
- * warning, the note about other sessions - has been removed. The rules are
- * still enforced by the server and stated when a password is refused; they no
- * longer occupy the screen while it is being filled in.
+ * Someone already inside the system changes their password from the pop-up in
+ * the account menu instead, so this page is only ever the gate.
  */
 export default async function ChangePasswordPage() {
   const session = await getSession();
   if (!session) redirect('/login');
+  if (!session.mustChangePassword) redirect('/dashboard');
+
+  const policy = await loadPasswordPolicy();
 
   return (
-    <Card className="rounded-2xl border border-line bg-surface/95 shadow-overlay backdrop-blur-md">
+    <Card className="w-full rounded-2xl border border-line bg-surface/95 shadow-overlay backdrop-blur-md">
       <CardHeader className="pb-2 text-center">
         <CardTitle className="text-lg font-bold text-ink">Change Password</CardTitle>
+        <p className="mt-1 text-[13px] leading-relaxed text-ink-3">
+          Your password must be changed before you continue.
+        </p>
       </CardHeader>
       <CardContent className="pt-2">
-        <ChangePasswordForm />
+        <ChangePasswordForm
+          rules={{
+            minLength: policy.minLength,
+            requireComplexity: policy.requireComplexity,
+            historyDepth: policy.historyDepth,
+          }}
+        />
       </CardContent>
     </Card>
   );

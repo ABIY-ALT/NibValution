@@ -7,7 +7,10 @@ import {
   createPropertyCategory,
   createRequestType,
   createRole,
+  createUser,
   publishParameterVersion,
+  revokeUserSessions,
+  sendPasswordLink,
   setPropertyCategoryActive,
   setRequestTypeActive,
   setUserActive,
@@ -15,11 +18,13 @@ import {
   setUserRoles,
   unlockUser,
   updateThresholdChain,
+  updateUserProfile,
+  type IssuedLink,
 } from '@/server/application/admin-service';
 import { addHoliday, removeHoliday, updateSlaPolicy } from '@/server/application/sla-service';
 import { holidaySchema, slaPolicySchema } from '@/lib/validation/sla';
 import { publishParameterSchema } from '@/lib/validation/parameters';
-import { isAppError } from '@/lib/errors';
+import { isAppError, ValidationError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
 import {
   DISCIPLINES,
@@ -34,6 +39,8 @@ import {
   createPropertyCategorySchema,
   createRequestTypeSchema,
   createRoleSchema,
+  createUserSchema,
+  userProfileSchema,
   type ConfigurationKind,
 } from '@/lib/validation/admin';
 
@@ -53,20 +60,37 @@ export type ActionResult = {
   fieldErrors?: Record<string, string[]>;
 };
 
+/**
+ * An action that issued a set-up or reset link. `link` is filled only when the
+ * link was not emailed, so the administrator can pass it on another way.
+ */
+export type LinkResult = ActionResult & { done?: boolean; link?: string };
+
+function revalidateAdmin(): void {
+  // Admin pages read live data; revalidating keeps the list consistent with
+  // the change that was just committed.
+  revalidatePath('/admin', 'layout');
+  revalidatePath('/reports/sla');
+}
+
+function failure(error: unknown): ActionResult {
+  if (error instanceof ValidationError) {
+    return { ok: false, message: error.message, fieldErrors: error.fieldErrors };
+  }
+  if (isAppError(error)) {
+    return { ok: false, message: error.safeDetail ?? error.message };
+  }
+  logger.error({ err: error }, 'Administration action failed');
+  return { ok: false, message: 'The change could not be saved. Please try again.' };
+}
+
 async function run(operation: () => Promise<void>, successMessage: string): Promise<ActionResult> {
   try {
     await operation();
-    // Admin pages read live data; revalidating keeps the list consistent with
-    // the change that was just committed.
-    revalidatePath('/admin', 'layout');
-    revalidatePath('/reports/sla');
+    revalidateAdmin();
     return { ok: true, message: successMessage };
   } catch (error) {
-    if (isAppError(error)) {
-      return { ok: false, message: error.safeDetail ?? error.message };
-    }
-    logger.error({ err: error }, 'Administration action failed');
-    return { ok: false, message: 'The change could not be saved. Please try again.' };
+    return failure(error);
   }
 }
 
@@ -130,6 +154,136 @@ export async function setUserDisciplineAction(
   }
 
   return run(() => setUserDiscipline(actor, userId, raw as Discipline, ctx), 'Discipline updated.');
+}
+
+function readUserProfile(formData: FormData) {
+  return {
+    employeeId: formData.get('employeeId') ?? '',
+    fullName: formData.get('fullName') ?? '',
+    email: formData.get('email') ?? '',
+    phone: formData.get('phone') ?? '',
+    organizationId: formData.get('organizationId') ?? '',
+    departmentId: formData.get('departmentId') ?? '',
+    discipline: formData.get('discipline') ?? '',
+  };
+}
+
+/** What the administrator is told about a set-up or reset link, and whether they get it to copy. */
+function linkResult(issued: IssuedLink, opening: string): LinkResult {
+  const kind = issued.purpose === 'SETUP' ? 'set-up' : 'reset';
+  const validity = `It is valid for ${issued.hours} hour${issued.hours === 1 ? '' : 's'} and works once.`;
+  const say = (...sentences: string[]) => [opening, ...sentences].filter(Boolean).join(' ');
+  switch (issued.email) {
+    case 'sent':
+      return {
+        ok: true,
+        done: true,
+        message: say(`A password ${kind} link was emailed to ${issued.address}.`, validity),
+      };
+    case 'failed':
+      return {
+        ok: true,
+        done: true,
+        link: issued.url,
+        message: say(`The email could not be sent, so copy the ${kind} link below and give it to the user.`, validity),
+      };
+    case 'disabled':
+      return {
+        ok: true,
+        done: true,
+        link: issued.url,
+        message: say(`Email is switched off (MAIL_DRIVER=log), so copy the ${kind} link below and give it to the user.`, validity),
+      };
+    case 'skipped':
+      return {
+        ok: true,
+        done: true,
+        link: issued.url,
+        message: say(`Copy the ${kind} link below and give it to the user.`, validity),
+      };
+  }
+}
+
+export async function updateUserAction(
+  _prev: ActionResult,
+  formData: FormData,
+): Promise<ActionResult> {
+  const actor = await requireActor();
+  const ctx = await getRequestContext();
+  const userId = String(formData.get('userId') ?? '');
+
+  const parsed = userProfileSchema.safeParse(readUserProfile(formData));
+  if (!parsed.success) return invalid(parsed.error);
+
+  return run(() => updateUserProfile(actor, userId, parsed.data, ctx), 'Details saved.');
+}
+
+export async function createUserAction(
+  _prev: LinkResult,
+  formData: FormData,
+): Promise<LinkResult> {
+  const actor = await requireActor();
+  const ctx = await getRequestContext();
+
+  const parsed = createUserSchema.safeParse({
+    ...readUserProfile(formData),
+    roles: formData.getAll('roles').map(String),
+    sendEmail: readBoolean(formData, 'sendEmail'),
+  });
+  if (!parsed.success) return invalid(parsed.error);
+
+  try {
+    const issued = await createUser(actor, parsed.data, ctx);
+    revalidateAdmin();
+    return linkResult(issued, `The account for ${parsed.data.fullName} has been created.`);
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function sendPasswordLinkAction(
+  _prev: LinkResult,
+  formData: FormData,
+): Promise<LinkResult> {
+  const actor = await requireActor();
+  const ctx = await getRequestContext();
+  const userId = String(formData.get('userId') ?? '');
+
+  try {
+    const issued = await sendPasswordLink(
+      actor,
+      userId,
+      { sendEmail: readBoolean(formData, 'sendEmail') },
+      ctx,
+    );
+    revalidateAdmin();
+    return linkResult(issued, '');
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function revokeUserSessionsAction(
+  _prev: ActionResult,
+  formData: FormData,
+): Promise<ActionResult> {
+  const actor = await requireActor();
+  const ctx = await getRequestContext();
+  const userId = String(formData.get('userId') ?? '');
+
+  try {
+    const count = await revokeUserSessions(actor, userId, ctx);
+    revalidateAdmin();
+    return {
+      ok: true,
+      message:
+        count === 0
+          ? 'There were no live sessions to end.'
+          : `Signed out of ${count} session${count === 1 ? '' : 's'}.`,
+    };
+  } catch (error) {
+    return failure(error);
+  }
 }
 
 export async function updateThresholdChainAction(

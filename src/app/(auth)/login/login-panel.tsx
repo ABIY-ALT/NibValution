@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import { ArrowLeft, Lock, LogIn } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Lock, LogIn } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { LoginForm } from './login-form';
 
@@ -16,8 +17,10 @@ const FLIP_MS = 380;
  * height to keep in step by hand — and the face turned away is `inert`, so a
  * keyboard or screen reader never reaches the fields behind the welcome.
  */
-export function LoginPanel() {
-  const [flipped, setFlipped] = useState(false);
+export function LoginPanel({ notice }: { notice?: string }) {
+  // Arriving with a notice (a password just set) means the next step is to
+  // sign in, so the card opens on the form rather than the welcome.
+  const [flipped, setFlipped] = useState(Boolean(notice));
   const startRef = useRef<HTMLButtonElement>(null);
 
   const flipToForm = useCallback(() => {
@@ -94,6 +97,13 @@ export function LoginPanel() {
           </p>
 
           <hr className="my-5 border-nib-brown-900/10 dark:border-nib-gold-400/20" />
+
+          {notice ? (
+            <Alert variant="success" className="mb-4">
+              <CheckCircle2 aria-hidden="true" />
+              <AlertDescription>{notice}</AlertDescription>
+            </Alert>
+          ) : null}
 
           <LoginForm />
         </div>

@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { useTheme, type ThemePreference } from '@/context/theme-context';
 import { useShell } from '@/components/navigation/sidebar';
+import { ChangePasswordDialog } from '@/components/auth/change-password-dialog';
+import type { PasswordRules } from '@/components/auth/password-checklist';
 import type { FeedNotice } from '@/server/application/notification-service';
 import { cn } from '@/lib/utils';
 
@@ -97,11 +99,14 @@ export function AppHeader({
   user,
   notices,
   signOut,
+  passwordRules,
 }: {
   user: HeaderUser;
   notices: FeedNotice[];
   signOut: () => Promise<void>;
+  passwordRules: PasswordRules;
 }) {
+  const [changingPassword, setChangingPassword] = useState(false);
   const router = useRouter();
   const { setMobileOpen } = useShell();
   const { preference, setPreference } = useTheme();
@@ -374,15 +379,18 @@ export function AppHeader({
                 <p className="mt-1 text-[13px] text-ink">{user.organisation}</p>
               </div>
 
-              <Link
-                href="/change-password"
+              <button
+                type="button"
                 role="menuitem"
-                onClick={() => setOpen('none')}
-                className="flex items-center gap-2.5 px-4 py-3 text-[13px] font-medium text-ink transition-colors hover:bg-surface-2"
+                onClick={() => {
+                  setOpen('none');
+                  setChangingPassword(true);
+                }}
+                className="flex w-full items-center gap-2.5 px-4 py-3 text-left text-[13px] font-medium text-ink transition-colors hover:bg-surface-2"
               >
                 <KeyRound className="h-4 w-4 text-ink-3" aria-hidden="true" />
                 Change password
-              </Link>
+              </button>
 
               <form action={signOut}>
                 <button
@@ -398,6 +406,12 @@ export function AppHeader({
           ) : null}
         </div>
       </div>
+
+      <ChangePasswordDialog
+        open={changingPassword}
+        onOpenChange={setChangingPassword}
+        rules={passwordRules}
+      />
     </header>
   );
 }

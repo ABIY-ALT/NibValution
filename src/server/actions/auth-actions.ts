@@ -2,10 +2,19 @@
 
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { changePassword, login, logout } from '@/server/application/auth-service';
+import {
+  changePassword,
+  completePasswordLink,
+  login,
+  logout,
+} from '@/server/application/auth-service';
 import { getRequestContext, getSession } from '@/server/application/actor';
-import { SESSION_COOKIE_NAME, sessionCookieOptions } from '@/server/infrastructure/auth/session';
-import { changePasswordSchema, loginSchema } from '@/lib/validation/auth';
+import {
+  SESSION_COOKIE_NAME,
+  revokeSession,
+  sessionCookieOptions,
+} from '@/server/infrastructure/auth/session';
+import { changePasswordSchema, loginSchema, setPasswordSchema } from '@/lib/validation/auth';
 import { isAppError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
 
@@ -139,5 +148,62 @@ export async function changePasswordAction(
     return { ok: false, message: 'The password could not be changed. Please try again.' };
   }
 
-  redirect('/dashboard?password-changed=1');
+  // The other sessions ended in changePassword; this one ends here too, so the
+  // first use of the new password is the sign-in that follows.
+  await endBrowserSession(session.sessionId);
+  redirect('/login?password-changed=1');
+}
+
+/** Revoke this browser's session, if it has one, and drop its cookie. */
+async function endBrowserSession(sessionId?: string): Promise<void> {
+  if (sessionId) await revokeSession(sessionId);
+  const cookieStore = await cookies();
+  cookieStore.delete(SESSION_COOKIE_NAME);
+}
+
+/**
+ * Set a password from an emailed set-up or reset link. Public - the link is
+ * the credential - so it reveals nothing about the account beyond what the
+ * page already showed for a valid link.
+ */
+export async function setPasswordFromLinkAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = setPasswordSchema.safeParse({
+    token: formData.get('token'),
+    newPassword: formData.get('newPassword'),
+    confirmPassword: formData.get('confirmPassword'),
+  });
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: 'Please correct the highlighted fields.',
+      fieldErrors: collectFieldErrors(parsed.error.issues),
+    };
+  }
+
+  const context = await getRequestContext();
+
+  try {
+    await completePasswordLink(parsed.data.token, parsed.data.newPassword, context);
+  } catch (error) {
+    if (isAppError(error)) {
+      const fieldErrors =
+        'fieldErrors' in error && error.fieldErrors
+          ? (error.fieldErrors as Record<string, string[]>)
+          : undefined;
+      return { ok: false, message: error.safeDetail ?? error.message, fieldErrors };
+    }
+    logger.error({ err: error, correlationId: context.correlationId }, 'Setting a password from a link failed');
+    return { ok: false, message: 'The password could not be set. Please try again.' };
+  }
+
+  // Every session the user had was just ended. Whoever else may be signed in
+  // in this browser is signed out as well, so the sign-in page always follows
+  // and the user signs in with the password they just chose.
+  const current = await getSession();
+  await endBrowserSession(current?.sessionId);
+  redirect('/login?password-set=1');
 }

@@ -39,6 +39,11 @@ enum Discipline {
   NONE
 }
 
+enum PasswordTokenPurpose {
+  SETUP
+  RESET
+}
+
 enum CaseStatus {
   DRAFT
   REQUESTED
@@ -252,6 +257,7 @@ model User {
 
   credential      Credential?
   passwordHistory PasswordHistory[]
+  passwordTokens  PasswordToken[]
   sessions        Session[]
   roles           UserRole[]
 
@@ -312,6 +318,26 @@ model PasswordHistory {
 
   @@index([userId, createdAt])
   @@map("password_history")
+}
+
+/// A one-time emailed link to set a password: SETUP for a new account, RESET
+/// when an administrator asks for one. Only the SHA-256 of the token is stored;
+/// the token itself exists only in the email, so a copy of this table opens
+/// nothing. `usedAt` is set when the link is used or superseded by a newer one.
+model PasswordToken {
+  id        String               @id @default(uuid()) @db.Uuid
+  userId    String               @db.Uuid
+  tokenHash String               @unique
+  purpose   PasswordTokenPurpose
+  expiresAt DateTime             @db.Timestamptz(6)
+  usedAt    DateTime?            @db.Timestamptz(6)
+  createdBy String?              @db.Uuid
+  createdAt DateTime             @default(now()) @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+  @@map("password_tokens")
 }
 
 /// Server-side sessions rather than stateless tokens: disabling a user must

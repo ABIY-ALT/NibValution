@@ -43,7 +43,9 @@ const ACTIONS: Record<string, { category: AuditCategoryKey; label: string }> = {
   LOGOUT: { category: 'access', label: 'Signed out' },
   SESSION_EXPIRED: { category: 'access', label: 'Session expired' },
   PASSWORD_CHANGED: { category: 'access', label: 'Password changed' },
-  PASSWORD_RESET_REQUESTED: { category: 'access', label: 'Password reset requested' },
+  PASSWORD_RESET_REQUESTED: { category: 'users', label: 'Password set-up or reset link sent' },
+  PASSWORD_RESET: { category: 'users', label: 'Password reset by an administrator' },
+  SESSIONS_REVOKED: { category: 'users', label: 'Signed out of every device' },
   ACCOUNT_LOCKED: { category: 'security', label: 'Account locked' },
   REAUTHENTICATED: { category: 'access', label: 'Identity confirmed' },
   PERMISSION_DENIED: { category: 'security', label: 'Access refused' },
@@ -298,16 +300,60 @@ export function describeAudit(record: AuditRecordInput, lookups: AuditLookups): 
 
     case 'PASSWORD_CHANGED': {
       const revoked = Number(after.otherSessionsRevoked ?? 0);
+      const via =
+        after.via === 'SETUP_LINK'
+          ? 'Set from the emailed set-up link'
+          : after.via === 'RESET_LINK'
+            ? 'Set from the emailed reset link'
+            : null;
+      const parts = [
+        via,
+        revoked > 0 ? `signed out of ${revoked} other session${revoked === 1 ? '' : 's'}` : null,
+      ].filter(Boolean);
+      const detail = parts.join(' · ');
       return result(
         targetName ? `Password changed for ${targetName}` : 'Changed password',
-        revoked > 0 ? `Signed out of ${revoked} other session${revoked === 1 ? '' : 's'}` : null,
+        detail ? detail.charAt(0).toUpperCase() + detail.slice(1) : null,
       );
     }
 
-    case 'PASSWORD_RESET_REQUESTED':
+    case 'PASSWORD_RESET_REQUESTED': {
+      if (after.purpose === 'SETUP' || after.purpose === 'RESET') {
+        const hours = Number(after.validHours ?? 0);
+        const parts = [
+          after.emailRequested === true ? 'Emailed to the user' : 'Link handed to the administrator',
+          hours > 0 ? `valid ${hours} hour${hours === 1 ? '' : 's'}` : null,
+        ].filter(Boolean);
+        return result(
+          after.purpose === 'SETUP'
+            ? `Sent ${target} a password set-up link`
+            : `Sent ${target} a password reset link`,
+          parts.join(' · '),
+        );
+      }
       return result(
         targetName ? `Password reset requested for ${targetName}` : 'Requested a password reset',
       );
+    }
+
+    // Kept for audit rows written before reset links replaced temporary passwords.
+    case 'PASSWORD_RESET': {
+      const revoked = Number(after.sessionsRevoked ?? 0);
+      const parts = [
+        'Temporary password issued',
+        after.emailRequested === true ? 'emailed to the user' : null,
+        revoked > 0 ? `signed out of ${revoked} session${revoked === 1 ? '' : 's'}` : null,
+      ].filter(Boolean);
+      return result(`Reset ${target}’s password`, parts.join(' · '));
+    }
+
+    case 'SESSIONS_REVOKED': {
+      const revoked = Number(after.sessionsRevoked ?? 0);
+      return result(
+        `Signed ${target} out of every device`,
+        `${revoked} session${revoked === 1 ? '' : 's'} ended`,
+      );
+    }
 
     case 'LOGIN_FAILURE': {
       const reason = text(after.reason);
@@ -451,7 +497,7 @@ export function describeAudit(record: AuditRecordInput, lookups: AuditLookups): 
       if ('lockedUntil' in after && after.lockedUntil === null && 'lockedUntil' in before) {
         return result(`Unlocked ${target}’s account`);
       }
-      if ('discipline' in after) {
+      if ('discipline' in after && Object.keys(after).length === 1) {
         const from = text(before.discipline);
         const to = text(after.discipline);
         return result(

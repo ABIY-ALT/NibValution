@@ -1,0 +1,13 @@
+# Sheet: HOME  unique formula patterns: 4
+
+## N6 (+39 copies, last N45)
+=IF(AND(K6<>"",L6<>""),K6*L6,"")
+
+## O6 (+39 copies, last O45)
+=IF(AND(K6<>"",M6<>""),K6*M6,"")
+
+## A23
+=IF(OR(E22="Condominium",E22="Apartment"),"Floor Level","")
+
+## B32
+=IF(AND(E26<>"",E20<>"",ISERROR(MATCH("6-10 Storey",HOME!$J$6:$J$45,0)),ISERROR(MATCH("11 storey & above",HOME!$J$6:$J$45,0)),ISERROR(MATCH("Factory",HOME!$J$6:$J$45,0)),ISERROR(MATCH("MPH above 4m",HOME!$J$6:$J$45,0)),ISERROR(MATCH("MPH below 4m",HOME!$J$6:$J$45,0))),IF(AND(E26="Addis Ababa",$E$20="Residential"),"USE BOTH COST And SALE APPROACH","USE COST APPROACH ONLY"),"")

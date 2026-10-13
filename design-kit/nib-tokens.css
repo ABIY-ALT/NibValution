@@ -1,0 +1,176 @@
+/* ===========================================================================
+   NIB INTERNATIONAL BANK - DESIGN TOKENS
+   Portable copy of the NIB Property Valuation palette. Plain CSS custom
+   properties: they work in any web stack (React, Vue, Angular, Laravel,
+   Django, plain HTML) with no build step.
+
+   Dark mode: add class="dark" (or data-theme="dark") to <html>.
+   This file holds values only. Pair it with nib-components.css (plain CSS)
+   or nib-tailwind.css (Tailwind v4).
+   =========================================================================== */
+
+:root {
+  /* Brand - fixed, identical in both themes */
+  --nib-brown-900: #3a1c05;
+  --nib-brown-800: #4b2507;
+  --nib-brown-700: #783b08;
+  --nib-brown-600: #8f4e14;
+
+  --nib-gold-800: #7a5c0e; /* gold text on a gold tint (5.5:1) */
+  --nib-gold-700: #96751f;
+  --nib-gold-600: #b89334;
+  --nib-gold-500: #d89a16; /* the primary brand gold */
+  --nib-gold-400: #f3bd28;
+  --nib-gold-200: #f0dca8;
+  --nib-gold-100: #f8e9c5;
+
+  --nib-cream: #fcf8ef;
+
+  /* Surfaces - near-white neutrals with a trace of warmth, so gold is the
+     one colour on the page. Cards are borderless and lift on shadow alone. */
+  --nib-app: #f6f6f3; /* page ground */
+  --nib-surface: #ffffff; /* cards, header, inputs */
+  --nib-surface-2: #f8f7f4;
+  --nib-surface-3: #f0eee9;
+  --nib-line: #eae7e0;
+  --nib-line-strong: #d9d4ca;
+  --nib-scrim: rgb(58 28 5 / 0.42); /* modal backdrop */
+
+  /* Text */
+  --nib-ink: #2a1b0c; /* primary */
+  --nib-ink-2: #5c4a34; /* secondary */
+  --nib-ink-3: #8a7862; /* muted, labels */
+
+  /* Navigation rail */
+  --nib-sidebar: #ffffff;
+  --nib-sidebar-2: #f6f5f2; /* hover */
+  --nib-sidebar-ink: #4a3b2a;
+  --nib-sidebar-ink-2: #8a7862;
+  --nib-sidebar-line: #efede8;
+
+  /* Chart series - darker than the brand gold, which is too faint on white
+     for a bar or a line to read as data. */
+  --nib-chart: #b07a0e;
+
+  /* Status - one hue per state, used identically on every screen */
+  --nib-st-neutral: #64748b;
+  --nib-st-neutral-bg: #f1f5f9;
+  --nib-st-info: #2563eb;
+  --nib-st-info-bg: #eff6ff;
+  --nib-st-active: #0e7490;
+  --nib-st-active-bg: #ecfeff;
+  --nib-st-wait: #7c3aed;
+  --nib-st-wait-bg: #f5f3ff;
+  --nib-st-review: #b45309;
+  --nib-st-review-bg: #fffbeb;
+  --nib-st-done: #047857;
+  --nib-st-done-bg: #ecfdf5;
+  --nib-st-late: #b91c1c;
+  --nib-st-late-bg: #fef2f2;
+
+  /* Text on a solid status fill (a danger button, a count pill). White in
+     light mode; in dark mode the fills turn light, so the label takes the
+     deep tint of the same hue instead - white on the dark-mode red is 2.5:1,
+     the deep tint about 6:1. */
+  --nib-on-info: #ffffff;
+  --nib-on-review: #ffffff;
+  --nib-on-done: #ffffff;
+  --nib-on-late: #ffffff;
+
+  /* Hexagon relief strength. The rail is deliberately faint so the menu
+     labels stay the focus - at 0.9 the cell shadows competed with them. The
+     content-area fragments frame the page. */
+  --nib-relief-rail: 0.3;
+  --nib-relief-ground: 1;
+  --nib-relief-ground-2: 0.6;
+
+  /* Type */
+  --nib-font:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --nib-text-hero: 2.25rem; /* 36px */
+  --nib-text-page: 1.5rem; /* 24px page titles */
+  --nib-text-section: 1.125rem; /* 18px card titles */
+  --nib-text-body: 0.875rem; /* 14px */
+  --nib-text-table: 0.8125rem; /* 13px */
+  --nib-text-meta: 0.75rem; /* 12px */
+
+  /* Geometry */
+  --nib-radius-control: 0.375rem; /* buttons, inputs */
+  --nib-radius-card: 0.5rem;
+  --nib-radius-panel: 0.625rem;
+  --nib-sidebar-width: 17rem; /* 272px; a drawer of the same width below 1024px */
+  --nib-sidebar-width-collapsed: 4.5rem;
+
+  /* Shadows - warm-tinted so elevation still reads as NIB brown */
+  --nib-shadow-card: 0 2px 6px 0 rgb(58 28 5 / 0.08);
+  --nib-shadow-raised: 0 4px 14px 0 rgb(58 28 5 / 0.13);
+  --nib-shadow-panel: 0 8px 24px -4px rgb(58 28 5 / 0.16);
+  --nib-shadow-overlay: 0 16px 40px -8px rgb(58 28 5 / 0.24), 0 4px 12px -4px rgb(58 28 5 / 0.12);
+  --nib-shadow-rail: 0 2px 6px 0 rgb(58 28 5 / 0.08);
+  --nib-shadow-brand: 0 2px 6px 0 rgb(216 154 22 / 0.42); /* gold glow under primary buttons */
+  --nib-shadow-brand-raised: 0 4px 12px 0 rgb(216 154 22 / 0.48);
+
+  /* Native controls, date pickers and scrollbars follow the theme too. */
+  color-scheme: light;
+}
+
+/* Dark theme: deep warm charcoal rather than inverted colours, so the brand
+   still reads as NIB brown and gold stays an accent. */
+.dark,
+[data-theme='dark'] {
+  --nib-app: #1a130c;
+  --nib-surface: #241a11;
+  --nib-surface-2: #2c2016;
+  --nib-surface-3: #36281b;
+  --nib-line: #3d2e20;
+  --nib-line-strong: #4e3b29;
+  --nib-scrim: rgb(8 5 2 / 0.66);
+
+  --nib-ink: #f5ede1;
+  --nib-ink-2: #c9b79f;
+  --nib-ink-3: #9a876f;
+
+  --nib-sidebar: #241a11;
+  --nib-sidebar-2: #2c2016;
+  --nib-sidebar-ink: #d9c9b3;
+  --nib-sidebar-ink-2: #9a876f;
+  --nib-sidebar-line: #3d2e20;
+
+  --nib-chart: #c2840f;
+
+  /* A warm shadow disappears on a dark ground; depth there is plain black. */
+  --nib-shadow-card: 0 2px 8px 0 rgb(0 0 0 / 0.32);
+  --nib-shadow-raised: 0 4px 16px 0 rgb(0 0 0 / 0.4);
+  --nib-shadow-panel: 0 8px 24px -4px rgb(0 0 0 / 0.46);
+  --nib-shadow-overlay: 0 16px 40px -8px rgb(0 0 0 / 0.6), 0 4px 12px -4px rgb(0 0 0 / 0.4);
+  --nib-shadow-rail: 0 2px 8px 0 rgb(0 0 0 / 0.32);
+  --nib-shadow-brand: 0 2px 6px 0 rgb(0 0 0 / 0.4);
+  --nib-shadow-brand-raised: 0 4px 12px 0 rgb(0 0 0 / 0.48);
+
+  --nib-st-neutral: #94a3b8;
+  --nib-st-neutral-bg: #29303a;
+  --nib-st-info: #7ea6f5;
+  --nib-st-info-bg: #1c2740;
+  --nib-st-active: #5fc8da;
+  --nib-st-active-bg: #10303a;
+  --nib-st-wait: #b79bf7;
+  --nib-st-wait-bg: #2a2140;
+  --nib-st-review: #e0a33c;
+  --nib-st-review-bg: #35280f;
+  --nib-st-done: #4fbf8b;
+  --nib-st-done-bg: #12301f;
+  --nib-st-late: #f08a85;
+  --nib-st-late-bg: #3a1a19;
+
+  --nib-on-info: var(--nib-st-info-bg);
+  --nib-on-review: var(--nib-st-review-bg);
+  --nib-on-done: var(--nib-st-done-bg);
+  --nib-on-late: var(--nib-st-late-bg);
+
+  --nib-relief-rail: 0.15;
+  --nib-relief-ground: 0.55;
+  --nib-relief-ground-2: 0.35;
+
+  color-scheme: dark;
+}

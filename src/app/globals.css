@@ -1,0 +1,419 @@
+@import 'tailwindcss';
+
+/* Manual theme control: Light / Dark / System. `.dark` is set on <html> by the
+   theme provider; System simply removes it and follows the OS. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   NIB INTERNATIONAL BANK — DESIGN TOKENS
+   Matched directly to the NIB Board System for seamless institutional consistency.
+   --------------------------------------------------------------------------- */
+
+@theme {
+  /* Brand — fixed, identical in both themes */
+  --color-nib-brown-900: #3a1c05;
+  --color-nib-brown-800: #4b2507;
+  --color-nib-brown-700: #783b08;
+  --color-nib-brown-600: #8f4e14;
+
+  --color-nib-gold-800: #7a5c0e; /* gold text on a gold tint (5.5:1) */
+  --color-nib-gold-700: #96751f;
+  --color-nib-gold-600: #b89334;
+  --color-nib-gold-500: #d89a16;
+  --color-nib-gold-400: #f3bd28;
+  --color-nib-gold-200: #f0dca8;
+  --color-nib-gold-100: #f8e9c5;
+
+  --color-nib-cream: #fcf8ef;
+
+  /* Semantic surfaces — remapped under .dark below. Near-white neutrals with
+     only a trace of warmth, so the gold is the one colour on the page; the
+     ground sits a step below white and borderless cards separate from it on
+     their shadow alone. */
+  --color-app: #f6f6f3;
+  --color-surface: #ffffff;
+  --color-surface-2: #f8f7f4;
+  --color-surface-3: #f0eee9;
+  --color-line: #eae7e0;
+  --color-line-strong: #d9d4ca;
+
+  /* Modal scrim. Translucent on purpose */
+  --color-scrim: rgb(58 28 5 / 0.42);
+
+  --color-ink: #2a1b0c;
+  --color-ink-2: #5c4a34;
+  --color-ink-3: #8a7862;
+
+  /* The rail is a light surface; the active item carries the gold. */
+  --color-sidebar: #ffffff;
+  --color-sidebar-2: #f6f5f2;
+  --color-sidebar-ink: #4a3b2a;
+  --color-sidebar-ink-2: #8a7862;
+  --color-sidebar-line: #efede8;
+
+  /* Chart series. Darker than the brand gold on purpose: nib-gold-500 is only
+     2.5:1 against white, too faint for a bar or a line to read as data. */
+  --color-chart: #b07a0e;
+
+  /* Status — one hue per state, used identically on every screen */
+  --color-st-neutral: #64748b;
+  --color-st-neutral-bg: #f1f5f9;
+  --color-st-info: #2563eb;
+  --color-st-info-bg: #eff6ff;
+  --color-st-active: #0e7490;
+  --color-st-active-bg: #ecfeff;
+  --color-st-wait: #7c3aed;
+  --color-st-wait-bg: #f5f3ff;
+  --color-st-review: #b45309;
+  --color-st-review-bg: #fffbeb;
+  --color-st-done: #047857;
+  --color-st-done-bg: #ecfdf5;
+  --color-st-late: #b91c1c;
+  --color-st-late-bg: #fef2f2;
+
+  /* Text on a solid status fill: bg-st-late text-on-late, and so on. White
+     here; in dark mode the fills turn light, so the label takes the deep tint
+     of the same hue instead - white on the dark-mode red is 2.5:1. */
+  --color-on-info: #ffffff;
+  --color-on-review: #ffffff;
+  --color-on-done: #ffffff;
+  --color-on-late: #ffffff;
+
+  /* Type scale */
+  --text-hero: 2.25rem; /* 36px page heroes */
+  --text-page: 1.5rem; /* 24px page titles */
+  --text-section: 1.125rem; /* 18px section titles */
+  --text-body: 0.875rem; /* 14px */
+  --text-table: 0.8125rem; /* 13px */
+  --text-meta: 0.75rem; /* 12px */
+
+  /* Component geometry — modest radii on borderless surfaces. Controls stay
+     tighter than the surfaces that hold them. */
+  --radius-control: 0.375rem;
+  --radius-card: 0.5rem;
+  --radius-panel: 0.625rem;
+  --radius-tile: 0.5rem;
+  --spacing-sidebar: 17rem; /* 272px */
+  --spacing-sidebar-collapsed: 4.5rem;
+  --spacing-header: 3.5rem;
+
+  /* Shadows — warm-tinted rather than neutral grey, so elevation still reads
+     as NIB brown. Cards carry no border, so the card shadow is what lifts them
+     off the ground; it is soft and even rather than a hard drop. */
+  --shadow-card: 0 2px 6px 0 rgb(58 28 5 / 0.08);
+  --shadow-raised: 0 4px 14px 0 rgb(58 28 5 / 0.13);
+  --shadow-panel: 0 8px 24px -4px rgb(58 28 5 / 0.16);
+  --shadow-overlay: 0 16px 40px -8px rgb(58 28 5 / 0.24), 0 4px 12px -4px rgb(58 28 5 / 0.12);
+  --shadow-rail: 0 2px 6px 0 rgb(58 28 5 / 0.08);
+  /* The gold glow under a primary action. */
+  --shadow-brand: 0 2px 6px 0 rgb(216 154 22 / 0.42);
+  --shadow-brand-raised: 0 4px 12px 0 rgb(216 154 22 / 0.48);
+}
+
+/* Dark theme: deep warm charcoal rather than inverted colours, so the brand
+   still reads as NIB brown/gold and gold stays an accent. */
+.dark {
+  --color-app: #1a130c;
+  --color-surface: #241a11;
+  --color-surface-2: #2c2016;
+  --color-surface-3: #36281b;
+  --color-line: #3d2e20;
+  --color-line-strong: #4e3b29;
+  --color-scrim: rgb(8 5 2 / 0.66);
+
+  --color-ink: #f5ede1;
+  --color-ink-2: #c9b79f;
+  --color-ink-3: #9a876f;
+
+  --color-sidebar: #241a11;
+  --color-sidebar-2: #2c2016;
+  --color-sidebar-ink: #d9c9b3;
+  --color-sidebar-ink-2: #9a876f;
+  --color-sidebar-line: #3d2e20;
+
+  --color-chart: #c2840f;
+
+  /* A warm shadow disappears on a dark ground; depth there is plain black. */
+  --shadow-card: 0 2px 8px 0 rgb(0 0 0 / 0.32);
+  --shadow-raised: 0 4px 16px 0 rgb(0 0 0 / 0.4);
+  --shadow-panel: 0 8px 24px -4px rgb(0 0 0 / 0.46);
+  --shadow-overlay: 0 16px 40px -8px rgb(0 0 0 / 0.6), 0 4px 12px -4px rgb(0 0 0 / 0.4);
+  --shadow-rail: 0 2px 8px 0 rgb(0 0 0 / 0.32);
+  --shadow-brand: 0 2px 6px 0 rgb(0 0 0 / 0.4);
+  --shadow-brand-raised: 0 4px 12px 0 rgb(0 0 0 / 0.48);
+
+  --color-st-neutral: #94a3b8;
+  --color-st-neutral-bg: #29303a;
+  --color-st-info: #7ea6f5;
+  --color-st-info-bg: #1c2740;
+  --color-st-active: #5fc8da;
+  --color-st-active-bg: #10303a;
+  --color-st-wait: #b79bf7;
+  --color-st-wait-bg: #2a2140;
+  --color-st-review: #e0a33c;
+  --color-st-review-bg: #35280f;
+  --color-st-done: #4fbf8b;
+  --color-st-done-bg: #12301f;
+  --color-st-late: #f08a85;
+  --color-st-late-bg: #3a1a19;
+
+  --color-on-info: #1c2740;
+  --color-on-review: #35280f;
+  --color-on-done: #12301f;
+  --color-on-late: #3a1a19;
+}
+
+@theme inline {
+  --color-background: var(--color-app);
+  --color-foreground: var(--color-ink);
+  --color-card: var(--color-surface);
+  --color-card-foreground: var(--color-ink);
+  --color-muted: var(--color-surface-2);
+  --color-muted-foreground: var(--color-ink-3);
+  --color-border: var(--color-line);
+  --color-input: var(--color-line);
+  --color-ring: var(--color-nib-gold-500);
+  --color-primary: var(--color-nib-gold-500);
+  --color-primary-foreground: var(--color-nib-brown-900);
+  --color-accent: var(--color-nib-gold-500);
+  --color-accent-foreground: var(--color-nib-brown-900);
+  --color-destructive: var(--color-st-late);
+  --color-destructive-foreground: var(--color-on-late);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-app);
+    color: var(--color-ink);
+    font-size: var(--text-body);
+    line-height: 1.5;
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      Roboto,
+      'Helvetica Neue',
+      Arial,
+      sans-serif;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Reference numbers, dates and durations line up in tables. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A single visible focus treatment across the whole application. */
+  :focus-visible {
+    outline: 2px solid var(--color-nib-gold-500);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background-color: var(--color-nib-gold-200);
+    color: var(--color-nib-brown-900);
+  }
+
+  /* Scrollbars tuned to the warm palette rather than the OS default grey. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--color-line-strong);
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer utilities {
+  /* Every page fades and lifts in on navigation, so a route change reads as a
+     transition rather than a flash of replaced content. */
+  .page-enter {
+    animation: nib-page-enter 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @keyframes nib-page-enter {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* A scroll area whose bar shows only while the pointer is over it, so the
+     navigation rail does not carry a permanent stripe down its edge. */
+  .scroll-quiet {
+    scrollbar-color: transparent transparent;
+  }
+  .scroll-quiet:hover,
+  .scroll-quiet:focus-within {
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+  .scroll-quiet::-webkit-scrollbar-thumb {
+    background-color: transparent;
+  }
+  .scroll-quiet:hover::-webkit-scrollbar-thumb,
+  .scroll-quiet:focus-within::-webkit-scrollbar-thumb {
+    background-color: var(--color-line-strong);
+  }
+
+  /* Print: the shell is chrome, not content. */
+  @media print {
+    .no-print {
+      display: none !important;
+    }
+    @page {
+      size: A4;
+      margin: 14mm;
+    }
+    html,
+    body {
+      background: #ffffff !important;
+    }
+    .print-sheet {
+      box-shadow: none !important;
+      padding: 0 !important;
+      max-width: none !important;
+      border: 0 !important;
+    }
+  }
+
+  /* A document is paper: light in every theme, so a letter viewed in dark mode
+     still reads - and prints - as the letter that was issued. The light
+     palette is restated here because the tokens are what every component
+     draws with. */
+  .paper {
+    --color-surface: #ffffff;
+    --color-surface-2: #f8f7f4;
+    --color-surface-3: #f0eee9;
+    --color-line: #eae7e0;
+    --color-line-strong: #d9d4ca;
+    --color-ink: #2a1b0c;
+    --color-ink-2: #5c4a34;
+    --color-ink-3: #8a7862;
+    --color-chart: #b07a0e;
+    --color-st-done: #047857;
+    --color-st-done-bg: #ecfdf5;
+    --color-st-late: #b91c1c;
+    --color-st-late-bg: #fef2f2;
+    --color-st-review: #b45309;
+    --color-st-review-bg: #fffbeb;
+    --color-st-info: #2563eb;
+    --color-st-info-bg: #eff6ff;
+    --color-on-info: #ffffff;
+    --color-on-review: #ffffff;
+    --color-on-done: #ffffff;
+    --color-on-late: #ffffff;
+    background-color: #ffffff;
+    color: #2a1b0c;
+    color-scheme: light;
+  }
+
+  /* The hexagon relief behind the navigation rail and the content ground
+     (components/layout/hex-relief.tsx). The image is white cells with soft
+     grey shadows, which sits naturally on the light surfaces; dark mode
+     inverts it into dark cells with lit seams, and the sepia pulls those seams
+     from neutral grey towards the warm brown of the dark palette. */
+  .hex-relief {
+    background-image: url('/textures/hex-relief.webp');
+    background-repeat: no-repeat;
+  }
+  .dark .hex-relief {
+    filter: invert(1) sepia(0.4);
+  }
+
+  /* Skeletons: one shimmer, defined once. */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--color-surface-2) 25%,
+      var(--color-surface-3) 37%,
+      var(--color-surface-2) 63%
+    );
+    background-size: 400% 100%;
+    animation: nib-shimmer 1.4s ease-in-out infinite;
+  }
+
+  @keyframes nib-shimmer {
+    0% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0 50%;
+    }
+  }
+
+  /* Panels that replace their own content — the sign-in showcase, the step
+     change between the welcome panel and the credential fields — settle in
+     rather than snapping, so the swap reads as one surface, not two. */
+  .nib-panel-enter {
+    animation: nib-panel-enter 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @keyframes nib-panel-enter {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* The EPMO pennant hangs from a pin, so it swings about that pin */
+  .epmo-swing {
+    transform-origin: 50% 5px;
+    animation: nib-epmo-swing 4.5s ease-in-out infinite;
+  }
+
+  @keyframes nib-epmo-swing {
+    0%,
+    100% {
+      transform: rotate(-2.4deg);
+    }
+    50% {
+      transform: rotate(2.4deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton {
+      animation: none;
+    }
+    .nib-panel-enter {
+      animation: none;
+    }
+    .epmo-swing {
+      animation: none;
+    }
+    .page-enter {
+      animation: none;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

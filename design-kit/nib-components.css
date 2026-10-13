@@ -1,0 +1,1674 @@
+/* ===========================================================================
+   NIB INTERNATIONAL BANK - COMPONENT STYLES (plain CSS)
+   The NIB Property Valuation look as ordinary classes, for projects that do
+   not use Tailwind. Requires nib-tokens.css to be loaded first.
+
+   Every class is prefixed `nib-` so it cannot collide with the host system's
+   own styles. The texture path is relative to this file, so keep the
+   `textures/` folder beside it.
+
+   Breakpoints match the NIB application: 640px (small), 768px (medium) and
+   1024px, below which the navigation rail becomes a drawer.
+   =========================================================================== */
+
+/* --- Base ------------------------------------------------------------------ */
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--nib-app);
+  color: var(--nib-ink);
+  font-family: var(--nib-font);
+  font-size: var(--nib-text-body);
+  line-height: 1.5;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  -webkit-font-smoothing: antialiased;
+}
+
+/* One visible focus treatment everywhere. */
+:focus-visible {
+  outline: 2px solid var(--nib-gold-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background-color: var(--nib-gold-200);
+  color: var(--nib-brown-900);
+}
+
+/* Scrollbars tuned to the warm palette rather than the OS default grey. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--nib-line-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--nib-line-strong);
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* A scroll area whose bar shows only while the pointer is over it, so the
+   navigation rail does not carry a permanent stripe down its edge. */
+.nib-scroll-quiet,
+.nib-nav {
+  scrollbar-color: transparent transparent;
+}
+.nib-scroll-quiet:hover,
+.nib-scroll-quiet:focus-within,
+.nib-nav:hover,
+.nib-nav:focus-within {
+  scrollbar-color: var(--nib-line-strong) transparent;
+}
+.nib-scroll-quiet::-webkit-scrollbar-thumb,
+.nib-nav::-webkit-scrollbar-thumb {
+  background-color: transparent;
+}
+.nib-scroll-quiet:hover::-webkit-scrollbar-thumb,
+.nib-scroll-quiet:focus-within::-webkit-scrollbar-thumb,
+.nib-nav:hover::-webkit-scrollbar-thumb,
+.nib-nav:focus-within::-webkit-scrollbar-thumb {
+  background-color: var(--nib-line-strong);
+}
+
+.nib-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Application shell ------------------------------------------------------
+   <div class="nib-shell">
+     <aside class="nib-sidebar" id="nib-rail"> ... </aside>
+     <div class="nib-scrim"></div>                (drawer backdrop, small screens)
+     <div class="nib-column">
+       <div class="nib-ground-relief">...</div>   (optional texture, FIRST)
+       <div class="nib-header-band"><header class="nib-header">...</header></div>
+       <main class="nib-main"><div class="nib-page">...</div></main>
+     </div>
+   </div>
+
+   STACKING: the content column is deliberately NOT a stacking context (no
+   isolation, no z-index). Dialogs are usually rendered inside the page; inside
+   an isolated column a z-index of 50 would still sit below the rail (z 40),
+   and a dialog's backdrop would leave the menu uncovered. The texture is put
+   beneath the page by DOM order instead: it comes first in the column, and
+   the header band and <main> after it are positioned.
+   --------------------------------------------------------------------------- */
+
+.nib-shell {
+  display: flex;
+  height: 100vh;
+  /* The visible height on a phone, where 100vh runs under the address bar. */
+  height: 100dvh;
+  overflow: hidden;
+  background-color: var(--nib-app);
+}
+
+/* Not isolated - see STACKING above. */
+.nib-column {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Outside the scroll area, so the page scrolls beneath the header rather than
+   taking it along, and raised so the header's menus paint over the page. */
+.nib-header-band {
+  position: relative;
+  z-index: 30;
+  flex-shrink: 0;
+  padding: 1rem 1.5rem 0;
+}
+
+/* Transparent, so the ground texture shows through, and positioned so it
+   paints over the ground relief that precedes it. */
+.nib-main {
+  position: relative;
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* The gutter beside the rail matches the 24px gap between cards, and the page
+   fills the column: centring a capped width opens a gap beside the rail that
+   widens on a wide screen or a zoomed-out page. Every page fades and lifts in,
+   so a navigation reads as a transition rather than a flash. */
+.nib-page {
+  padding: 2rem 1.5rem;
+  animation: nib-page-enter 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes nib-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* A width cap for pages of forms and settings, which become hard to read at
+   full width. Anchored to the rail like every other page, never centred.
+   <div class="nib-page"><div class="nib-page__capped">...</div></div> */
+.nib-page__capped {
+  max-width: 80rem;
+}
+
+/* Page sections sit 24px apart, the same as the gutter. */
+.nib-stack > * + * {
+  margin-top: 1.5rem;
+}
+
+/* --- Page hero ----------------------------------------------------------------
+   Every page opens with one, and nothing else claims the H1: the header
+   carries no page title. Actions share the title's line on wide screens and
+   drop beneath it when the title needs the width.
+
+   <header class="nib-hero">
+     <div class="nib-hero__text">
+       <p class="nib-hero__eyebrow">Administration</p>       (optional)
+       <h1 class="nib-page-title">Users</h1>
+       <p class="nib-hero__subtitle">Who can sign in...</p>  (optional)
+     </div>
+     <div class="nib-hero__actions">...buttons...</div>      (optional)
+   </header>
+   --------------------------------------------------------------------------- */
+
+.nib-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.nib-hero__text {
+  min-width: 0;
+}
+
+.nib-hero__eyebrow {
+  margin: 0 0 0.25rem;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--nib-gold-600);
+}
+
+/* Works alone too, for a page that needs no subtitle or actions. */
+.nib-page-title {
+  margin: 0 0 1.25rem;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+  color: var(--nib-ink);
+}
+
+.nib-hero .nib-page-title {
+  margin: 0;
+}
+
+.nib-hero__subtitle {
+  max-width: 48rem;
+  margin: 0.375rem 0 0;
+  font-size: 13px;
+  line-height: 1.625;
+  color: var(--nib-ink-3);
+}
+
+.nib-hero__actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+@media (min-width: 640px) {
+  .nib-page-title {
+    font-size: 26px;
+  }
+  .nib-hero__subtitle {
+    font-size: 14px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .nib-hero {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+}
+
+/* --- Header -------------------------------------------------------------------
+   The header floats as its own card above the scrolling content: the menu
+   button (small screens only) and search on the left, round icon buttons and
+   the account avatar pinned to the right.
+
+   <header class="nib-header">
+     <button class="nib-header-btn nib-menu-button" aria-controls="nib-rail"
+             aria-expanded="false" aria-label="Open navigation">...</button>
+     <form class="nib-header-search" role="search">
+       <svg>search</svg><input type="search" ... /><kbd>Ctrl K</kbd>
+     </form>
+     <div class="nib-header__actions">
+       <button class="nib-header-btn">...<span class="nib-header-btn__count">3</span></button>
+       <button class="nib-avatar">AK</button>
+     </div>
+   </header>
+   --------------------------------------------------------------------------- */
+
+.nib-header {
+  display: flex;
+  height: 4rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 1.25rem;
+  border-radius: var(--nib-radius-card);
+  background-color: var(--nib-surface);
+  box-shadow: var(--nib-shadow-card);
+}
+
+.nib-header__actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+/* A round icon button, the one shape every header control shares. */
+.nib-header-btn {
+  position: relative;
+  display: flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background-color: transparent;
+  color: var(--nib-ink-2);
+  cursor: pointer;
+  transition:
+    background-color 150ms,
+    color 150ms;
+}
+.nib-header-btn:hover,
+.nib-header-btn[aria-expanded='true'] {
+  background-color: var(--nib-surface-2);
+  color: var(--nib-ink);
+}
+.nib-header-btn svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* A count on a header button. Red rather than gold: it asks for attention. */
+.nib-header-btn__count {
+  position: absolute;
+  top: 0.125rem;
+  right: 0.125rem;
+  display: flex;
+  min-width: 1rem;
+  height: 1rem;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background-color: var(--nib-st-late);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--nib-on-late);
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--nib-surface);
+}
+
+/* Opens the navigation drawer. Shown only below 1024px, where the rail is. */
+.nib-menu-button {
+  display: none;
+}
+
+/* Borderless: the header card is the search field's frame. It tints and takes
+   a gold ring while the user is typing. */
+.nib-header-search {
+  position: relative;
+  min-width: 0;
+  max-width: 28rem;
+  flex: 1;
+  margin: 0;
+  border-radius: var(--nib-radius-control);
+  transition:
+    background-color 150ms,
+    box-shadow 150ms;
+}
+.nib-header-search:focus-within {
+  background-color: var(--nib-surface-2);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--nib-gold-500) 30%, transparent);
+}
+.nib-header-search svg {
+  position: absolute;
+  top: 50%;
+  left: 0.5rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  transform: translateY(-50%);
+  color: var(--nib-ink-2);
+  pointer-events: none;
+}
+.nib-header-search input {
+  display: block;
+  width: 100%;
+  height: 2.5rem;
+  box-sizing: border-box;
+  padding: 0 3rem 0 2.5rem;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--nib-ink);
+  appearance: none;
+}
+.nib-header-search input::placeholder {
+  color: var(--nib-ink-3);
+}
+.nib-header-search input:focus {
+  outline: none;
+}
+.nib-header-search kbd {
+  position: absolute;
+  top: 50%;
+  right: 0.5rem;
+  transform: translateY(-50%);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--nib-ink-3);
+  pointer-events: none;
+}
+
+/* The account's initials on the brown gradient, with a presence dot. Can be a
+   <span> or the <button> that opens the account menu. */
+.nib-avatar {
+  position: relative;
+  display: flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background-image: linear-gradient(to bottom right, var(--nib-brown-700), var(--nib-brown-900));
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--nib-gold-200);
+  transition: box-shadow 150ms;
+}
+.nib-avatar::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 999px;
+  background-color: var(--nib-st-done);
+  box-shadow: 0 0 0 2px var(--nib-surface);
+}
+button.nib-avatar {
+  margin-left: 0.25rem;
+  cursor: pointer;
+}
+button.nib-avatar:hover {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--nib-gold-500) 20%, transparent);
+}
+
+/* --- Sidebar ----------------------------------------------------------------
+   <aside class="nib-sidebar" id="nib-rail">      (add .is-collapsed for icons only)
+     <div class="nib-rail-relief"></div>          (optional texture)
+     <div class="nib-sidebar__brand">
+       logo
+       <button class="nib-sidebar__close" type="button"
+               aria-label="Close navigation">...</button>   (drawer only)
+     </div>
+     <button class="nib-sidebar-toggle" type="button" aria-pressed="false"
+             aria-label="Collapse navigation">
+       <svg>chevron-left</svg>
+     </button>
+     <nav class="nib-nav">
+       <h2 class="nib-nav__title">Overview</h2>
+       <a class="nib-nav__item" aria-current="page" href="#">
+         <svg class="nib-nav__icon">...</svg>
+         <span class="nib-nav__label">Dashboard</span>
+         <span class="nib-nav__count">3</span>
+       </a>
+     </nav>
+   </aside>
+   --------------------------------------------------------------------------- */
+
+.nib-sidebar {
+  position: relative;
+  z-index: 40;
+  display: flex;
+  width: var(--nib-sidebar-width);
+  flex-shrink: 0;
+  flex-direction: column;
+  background-color: var(--nib-sidebar);
+  box-shadow: var(--nib-shadow-rail);
+  /* A hairline: with the honeycomb on both sides, the shadow alone no longer
+     says where the rail ends. */
+  border-right: 1px solid var(--nib-sidebar-line);
+  transition: width 200ms ease-out;
+}
+
+.nib-sidebar__brand {
+  display: flex;
+  height: 4.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 1.25rem;
+  /* Clips the logo text while the rail animates narrower. */
+  overflow: hidden;
+}
+
+/* The collapse button: a gold disc straddling the rail's edge. The ring in the
+   page-ground colour cuts it out from the rail and the header behind it. */
+.nib-sidebar-toggle {
+  position: absolute;
+  top: 1.375rem;
+  right: -0.875rem;
+  display: flex;
+  width: 1.75rem;
+  height: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background-color: var(--nib-gold-500);
+  color: var(--nib-brown-900);
+  box-shadow:
+    0 0 0 5px var(--nib-app),
+    var(--nib-shadow-brand);
+  cursor: pointer;
+  transition:
+    background-color 150ms,
+    transform 150ms;
+}
+.nib-sidebar-toggle:hover {
+  background-color: var(--nib-gold-400);
+}
+.nib-sidebar-toggle:active {
+  transform: scale(0.95);
+}
+.nib-sidebar-toggle svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  transition: transform 200ms;
+}
+
+/* Closes the drawer on small screens; hidden on the desktop rail. */
+.nib-sidebar__close {
+  display: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--nib-radius-control);
+  background-color: transparent;
+  color: var(--nib-sidebar-ink-2);
+  cursor: pointer;
+  transition:
+    background-color 150ms,
+    color 150ms;
+}
+.nib-sidebar__close:hover {
+  background-color: var(--nib-sidebar-2);
+  color: var(--nib-sidebar-ink);
+}
+.nib-sidebar__close svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* Logo lockup: the mark, the bank's name, and the system's name in gold. */
+.nib-logo {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+}
+.nib-logo img {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 0.5rem;
+  object-fit: contain;
+}
+.nib-logo__text {
+  min-width: 0;
+  white-space: nowrap;
+}
+.nib-logo__name,
+.nib-logo__system {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nib-logo__name {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--nib-ink);
+}
+.nib-logo__system {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--nib-gold-600);
+}
+.dark .nib-logo__system,
+[data-theme='dark'] .nib-logo__system {
+  color: var(--nib-gold-400);
+}
+
+.nib-nav {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1.25rem;
+  overflow-y: auto;
+  padding: 0.5rem 0.75rem 1.5rem;
+}
+
+.nib-nav__title {
+  margin: 0 0 0.375rem;
+  padding: 0 0.875rem;
+  font-size: 11.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--nib-sidebar-ink-2);
+}
+
+.nib-nav__item {
+  position: relative;
+  display: flex;
+  height: 2.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 0.875rem;
+  border-radius: var(--nib-radius-control);
+  font-size: 14px;
+  color: var(--nib-sidebar-ink);
+  text-decoration: none;
+  transition: background-color 150ms;
+}
+.nib-nav__item:hover {
+  background-color: var(--nib-sidebar-2);
+}
+
+.nib-nav__icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  color: var(--nib-sidebar-ink-2);
+}
+
+.nib-nav__label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The active page carries the gold: a tint, gold text, and an edge marker
+   flush with the rail's right edge. Mark exactly one item: the longest link
+   that is the current path or a parent of it. */
+.nib-nav__item[aria-current='page'],
+.nib-nav__item.is-active {
+  background-color: color-mix(in srgb, var(--nib-gold-500) 15%, transparent);
+  font-weight: 600;
+  color: var(--nib-gold-800);
+}
+.nib-nav__item[aria-current='page'] .nib-nav__icon,
+.nib-nav__item.is-active .nib-nav__icon {
+  color: var(--nib-gold-700);
+}
+.nib-nav__item[aria-current='page']::after,
+.nib-nav__item.is-active::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -0.75rem;
+  width: 0.25rem;
+  border-radius: 0.375rem 0 0 0.375rem;
+  background-color: var(--nib-gold-500);
+}
+
+.nib-nav__count {
+  margin-left: auto;
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  background-color: var(--nib-gold-500);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--nib-brown-900);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Collapsed rail -----------------------------------------------------------
+   Icons only. Labels stay in the page for screen readers; section titles
+   become short dividers; counts sit on the icon's corner. Give each link a
+   `title` while collapsed so the label still shows on hover.
+
+   A desktop preference only: the drawer on small screens always shows labels,
+   so a stored "collapsed" choice never reaches a phone.
+   --------------------------------------------------------------------------- */
+
+@media (min-width: 1024px) {
+  .nib-sidebar.is-collapsed {
+    width: var(--nib-sidebar-width-collapsed);
+  }
+  .nib-sidebar.is-collapsed .nib-sidebar-toggle svg {
+    transform: rotate(180deg);
+  }
+  .nib-sidebar.is-collapsed .nib-sidebar__brand {
+    justify-content: center;
+    padding: 0 0.5rem;
+  }
+  .nib-sidebar.is-collapsed .nib-logo img {
+    width: 32px;
+    height: 32px;
+  }
+  .nib-sidebar.is-collapsed .nib-logo__text {
+    display: none;
+  }
+  .nib-sidebar.is-collapsed .nib-nav {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+  .nib-sidebar.is-collapsed .nib-nav__title {
+    width: 1.5rem;
+    height: 1px;
+    margin: 0 auto 0.5rem;
+    padding: 0;
+    overflow: hidden;
+    font-size: 0;
+    background-color: var(--nib-sidebar-line);
+  }
+  .nib-sidebar.is-collapsed .nib-nav__item {
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+  }
+  .nib-sidebar.is-collapsed .nib-nav__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+  }
+  .nib-sidebar.is-collapsed .nib-nav__count {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.375rem;
+    display: flex;
+    min-width: 1rem;
+    height: 1rem;
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: center;
+    padding: 0.125rem 0.25rem;
+    box-shadow: 0 0 0 2px var(--nib-sidebar);
+  }
+  .nib-sidebar.is-collapsed .nib-nav__item[aria-current='page']::after,
+  .nib-sidebar.is-collapsed .nib-nav__item.is-active::after {
+    right: -0.5rem;
+  }
+}
+
+/* --- Small screens: the rail becomes a drawer --------------------------------
+   Below 1024px the rail leaves the layout and slides in over the page from the
+   header's menu button, above a blurred scrim. Without this a phone kept the
+   full 272px rail and the page was left a sliver.
+
+   Add .is-open to .nib-sidebar to show it. The scrim must come after the
+   <aside> as its sibling. The script in preview.html wires the buttons, the
+   scrim, the Escape key and the focus; copy it, or toggle the class from your
+   own framework.
+   --------------------------------------------------------------------------- */
+
+.nib-scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background-color: var(--nib-scrim);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+@media (max-width: 1023px) {
+  .nib-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 50;
+    width: var(--nib-sidebar-width);
+    max-width: 85vw;
+    border-right: 0;
+    box-shadow: var(--nib-shadow-overlay);
+    /* Hidden, not just moved: a closed drawer's links must not take focus. */
+    visibility: hidden;
+    transform: translateX(-100%);
+    transition:
+      transform 200ms ease-out,
+      visibility 0s 200ms;
+  }
+  .nib-sidebar.is-open {
+    visibility: visible;
+    transform: none;
+    transition: transform 200ms ease-out;
+  }
+  .nib-sidebar.is-open ~ .nib-scrim {
+    display: block;
+  }
+  .nib-sidebar-toggle {
+    display: none;
+  }
+  .nib-sidebar__close,
+  .nib-menu-button {
+    display: flex;
+  }
+  .dark .nib-sidebar,
+  [data-theme='dark'] .nib-sidebar {
+    border-right: 1px solid var(--nib-sidebar-line);
+  }
+}
+
+/* --- Cards ------------------------------------------------------------------ */
+
+/* Borderless in light mode (white on the warm-grey ground, lifted by shadow);
+   a hairline in dark mode, where a shadow does not read as an edge. */
+.nib-card {
+  border: 1px solid transparent;
+  border-radius: var(--nib-radius-card);
+  background-color: var(--nib-surface);
+  color: var(--nib-ink);
+  box-shadow: var(--nib-shadow-card);
+  transition:
+    box-shadow 200ms,
+    border-color 200ms;
+}
+/* For a card that is itself a link: one that lifts invites the click. */
+.nib-card--interactive {
+  color: inherit;
+  text-decoration: none;
+}
+.nib-card--interactive:hover {
+  box-shadow: var(--nib-shadow-raised);
+}
+
+.nib-card__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem 1rem;
+  border-bottom: 1px solid var(--nib-line);
+}
+
+.nib-card__title {
+  margin: 0;
+  font-size: var(--nib-text-section);
+  font-weight: 600;
+  line-height: 1.375;
+  letter-spacing: -0.01em;
+}
+
+.nib-card__description {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.625;
+  color: var(--nib-ink-3);
+}
+
+.nib-card__body {
+  padding: 1.5rem;
+}
+
+.nib-card__footer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--nib-line);
+}
+
+/* The tinted icon plate a card title leads with. The tint says what kind of
+   section it is - gold for ordinary content, red for corrections - so the
+   title text itself stays in ink. Tones: --danger, --info, --good. */
+.nib-icon-plate {
+  display: flex;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--nib-radius-control);
+  background-color: color-mix(in srgb, var(--nib-gold-500) 15%, transparent);
+  color: var(--nib-gold-700);
+}
+.nib-icon-plate svg {
+  width: 18px;
+  height: 18px;
+}
+.nib-icon-plate--danger {
+  background-color: var(--nib-st-late-bg);
+  color: var(--nib-st-late);
+}
+.nib-icon-plate--info {
+  background-color: var(--nib-st-info-bg);
+  color: var(--nib-st-info);
+}
+.nib-icon-plate--good {
+  background-color: var(--nib-st-done-bg);
+  color: var(--nib-st-done);
+}
+
+/* --- Stat tiles ---------------------------------------------------------------
+   The figure tile at the top of a page that leads with numbers. The icon plate
+   leads, the label names the figure, and the figure carries the weight, so a
+   row of tiles scans down each column as "what, then how many".
+
+   <div class="nib-stat-grid">
+     <div class="nib-card nib-stat nib-stat--good">       (or <a ... nib-card--interactive>)
+       <span class="nib-stat__icon"><svg>...</svg></span>
+       <p class="nib-stat__label">Completed</p>
+       <p class="nib-stat__value">1,042<span class="nib-stat__unit">cases</span></p>
+       <p class="nib-delta nib-delta--good"><svg>arrow-up</svg>8% on last quarter</p>
+       <p class="nib-stat__meta">This quarter</p>
+     </div>
+   </div>
+
+   Tones: --brand, --good, --warning, --danger, --info; neutral without one.
+   --------------------------------------------------------------------------- */
+
+.nib-stat {
+  --stat-tint: var(--nib-surface-3);
+  --stat-accent: var(--nib-ink-2);
+  --stat-value: var(--nib-ink);
+  display: block;
+  padding: 1.25rem;
+}
+.nib-stat--brand {
+  --stat-tint: var(--nib-gold-100);
+  --stat-accent: var(--nib-gold-700);
+}
+.nib-stat--good {
+  --stat-tint: var(--nib-st-done-bg);
+  --stat-accent: var(--nib-st-done);
+  --stat-value: var(--nib-st-done);
+}
+.nib-stat--warning {
+  --stat-tint: var(--nib-st-review-bg);
+  --stat-accent: var(--nib-st-review);
+  --stat-value: var(--nib-st-review);
+}
+.nib-stat--danger {
+  --stat-tint: var(--nib-st-late-bg);
+  --stat-accent: var(--nib-st-late);
+  --stat-value: var(--nib-st-late);
+}
+.nib-stat--info {
+  --stat-tint: var(--nib-st-info-bg);
+  --stat-accent: var(--nib-st-info);
+  --stat-value: var(--nib-st-info);
+}
+
+.nib-stat__icon {
+  display: flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--nib-radius-control);
+  background-color: var(--stat-tint);
+  color: var(--stat-accent);
+  transition: transform 200ms;
+}
+.nib-stat__icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.nib-stat:hover .nib-stat__icon {
+  transform: scale(1.05);
+}
+
+.nib-stat__label {
+  margin: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--nib-ink-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nib-stat__icon + .nib-stat__label {
+  margin-top: 1rem;
+}
+
+.nib-stat__value {
+  margin: 0.25rem 0 0;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+  color: var(--stat-value);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A short unit after the figure, e.g. m2 or ETB, at reduced weight. */
+.nib-stat__unit {
+  margin-left: 0.25rem;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--nib-ink-3);
+}
+
+.nib-stat__meta {
+  margin: 0.375rem 0 0;
+  overflow: hidden;
+  font-size: var(--nib-text-meta);
+  color: var(--nib-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A change against a named period. Colour follows whether the movement is good
+   news, not its direction: more completions is green, more overdue cases red. */
+.nib-delta {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0.375rem 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--nib-ink-3);
+}
+.nib-delta svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex-shrink: 0;
+}
+.nib-delta--good {
+  color: var(--nib-st-done);
+}
+.nib-delta--bad {
+  color: var(--nib-st-late);
+}
+.nib-delta + .nib-stat__meta {
+  margin-top: 0.125rem;
+}
+
+/* Capped at four across: any narrower and a currency figure overflows. */
+.nib-stat-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+@media (min-width: 640px) {
+  .nib-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1024px) {
+  .nib-stat-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1280px) {
+  .nib-stat-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1.5rem;
+  }
+}
+
+/* --- Buttons ---------------------------------------------------------------- */
+
+.nib-btn {
+  display: inline-flex;
+  height: 2.5rem;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0 1rem;
+  border: 1px solid transparent;
+  border-radius: var(--nib-radius-control);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  text-decoration: none;
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms,
+    transform 150ms;
+}
+.nib-btn:active {
+  transform: scale(0.98);
+}
+.nib-btn:disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+.nib-btn svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+/* Primary: brand gold with a gold glow. */
+.nib-btn,
+.nib-btn--primary {
+  background-color: var(--nib-gold-500);
+  color: var(--nib-brown-900);
+  box-shadow: var(--nib-shadow-brand);
+}
+.nib-btn:hover,
+.nib-btn--primary:hover {
+  background-color: var(--nib-gold-400);
+  box-shadow: var(--nib-shadow-brand-raised);
+}
+
+/* Accent: deep brown with pale gold text. */
+.nib-btn--accent {
+  background-color: var(--nib-brown-800);
+  color: var(--nib-gold-200);
+  box-shadow: var(--nib-shadow-card);
+}
+.nib-btn--accent:hover {
+  background-color: var(--nib-brown-900);
+  box-shadow: var(--nib-shadow-raised);
+}
+
+.nib-btn--outline {
+  border-color: var(--nib-line-strong);
+  background-color: var(--nib-surface);
+  color: var(--nib-ink);
+  box-shadow: var(--nib-shadow-card);
+}
+.nib-btn--outline:hover {
+  border-color: color-mix(in srgb, var(--nib-gold-500) 50%, transparent);
+  background-color: var(--nib-surface-2);
+  box-shadow: var(--nib-shadow-card);
+}
+
+.nib-btn--secondary {
+  border-color: var(--nib-line);
+  background-color: var(--nib-surface-2);
+  color: var(--nib-ink);
+  box-shadow: none;
+}
+.nib-btn--secondary:hover {
+  background-color: var(--nib-surface-3);
+  box-shadow: none;
+}
+
+.nib-btn--ghost {
+  background-color: transparent;
+  color: var(--nib-ink-2);
+  box-shadow: none;
+}
+.nib-btn--ghost:hover {
+  background-color: var(--nib-surface-2);
+  color: var(--nib-ink);
+  box-shadow: none;
+}
+
+.nib-btn--link {
+  background-color: transparent;
+  color: var(--nib-gold-700);
+  box-shadow: none;
+  text-underline-offset: 4px;
+}
+.nib-btn--link:hover {
+  background-color: transparent;
+  box-shadow: none;
+  text-decoration: underline;
+}
+
+.nib-btn--danger {
+  background-color: var(--nib-st-late);
+  color: var(--nib-on-late);
+  box-shadow: var(--nib-shadow-card);
+}
+.nib-btn--danger:hover {
+  background-color: color-mix(in srgb, var(--nib-st-late) 90%, transparent);
+  box-shadow: var(--nib-shadow-raised);
+}
+
+/* A destructive action that should not shout: tinted, not filled, so it sits
+   beside a primary action without competing with it. */
+.nib-btn--soft-danger {
+  border-color: color-mix(in srgb, var(--nib-st-late) 25%, transparent);
+  background-color: var(--nib-st-late-bg);
+  color: var(--nib-st-late);
+  box-shadow: none;
+}
+.nib-btn--soft-danger:hover {
+  border-color: color-mix(in srgb, var(--nib-st-late) 40%, transparent);
+  background-color: color-mix(in srgb, var(--nib-st-late) 15%, transparent);
+  box-shadow: none;
+}
+
+.nib-btn--sm {
+  height: 2rem;
+  padding: 0 0.75rem;
+  font-size: 12px;
+}
+.nib-btn--lg {
+  height: 3rem;
+  padding: 0 1.75rem;
+  font-size: 14px;
+}
+/* Square, for a button that is only an icon. Give it an aria-label. */
+.nib-btn--icon {
+  width: 2.5rem;
+  padding: 0;
+}
+.nib-btn--icon.nib-btn--sm {
+  width: 2rem;
+}
+.nib-btn--sm svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* --- Form fields ------------------------------------------------------------ */
+
+.nib-label {
+  display: block;
+  margin-bottom: 0.375rem;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--nib-ink-3);
+}
+
+.nib-hint {
+  margin: 0.375rem 0 0;
+  font-size: 11px;
+  color: var(--nib-ink-3);
+}
+
+.nib-input,
+.nib-select,
+.nib-textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  height: 2.5rem;
+  padding: 0 0.875rem;
+  border: 1px solid var(--nib-line);
+  border-radius: var(--nib-radius-control);
+  background-color: var(--nib-surface);
+  font: inherit;
+  font-size: 13px;
+  color: var(--nib-ink);
+  box-shadow: var(--nib-shadow-card);
+  transition:
+    border-color 150ms,
+    box-shadow 150ms;
+}
+.nib-textarea {
+  height: auto;
+  padding: 0.625rem 0.875rem;
+  line-height: 1.625;
+}
+.nib-select {
+  appearance: none;
+  padding-right: 2.25rem;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238A7862' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+  background-size: 16px 16px;
+  background-position: right 0.75rem center;
+  background-repeat: no-repeat;
+}
+.nib-input::placeholder,
+.nib-textarea::placeholder {
+  color: color-mix(in srgb, var(--nib-ink-3) 70%, transparent);
+}
+.nib-input:hover,
+.nib-select:hover,
+.nib-textarea:hover {
+  border-color: var(--nib-line-strong);
+}
+.nib-input:focus-visible,
+.nib-select:focus-visible,
+.nib-textarea:focus-visible {
+  outline: none;
+  border-color: var(--nib-gold-500);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--nib-gold-500) 25%, transparent);
+}
+.nib-input[aria-invalid='true'],
+.nib-select[aria-invalid='true'],
+.nib-textarea[aria-invalid='true'] {
+  border-color: var(--nib-st-late);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--nib-st-late) 20%, transparent);
+}
+.nib-input:disabled,
+.nib-select:disabled,
+.nib-textarea:disabled {
+  cursor: not-allowed;
+  background-color: var(--nib-surface-2);
+  opacity: 0.6;
+}
+
+/* --- Status badges -----------------------------------------------------------
+   One hue per meaning, identical on every screen.
+   <span class="nib-badge nib-badge--success">Approved</span>
+   --------------------------------------------------------------------------- */
+
+.nib-badge {
+  --badge-fg: var(--nib-ink-2);
+  --badge-bg: var(--nib-surface-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0.625rem;
+  border: 1px solid var(--nib-line);
+  border-radius: 999px;
+  background-color: var(--badge-bg);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--badge-fg);
+}
+.nib-badge--info,
+.nib-badge--active,
+.nib-badge--waiting,
+.nib-badge--warning,
+.nib-badge--success,
+.nib-badge--danger,
+.nib-badge--brand {
+  border-color: color-mix(in srgb, var(--badge-fg) 30%, transparent);
+}
+.nib-badge--inactive {
+  --badge-fg: var(--nib-ink-3);
+}
+.nib-badge--info {
+  --badge-fg: var(--nib-st-info);
+  --badge-bg: var(--nib-st-info-bg);
+}
+.nib-badge--active {
+  --badge-fg: var(--nib-st-active);
+  --badge-bg: var(--nib-st-active-bg);
+}
+.nib-badge--waiting {
+  --badge-fg: var(--nib-st-wait);
+  --badge-bg: var(--nib-st-wait-bg);
+}
+.nib-badge--warning {
+  --badge-fg: var(--nib-st-review);
+  --badge-bg: var(--nib-st-review-bg);
+}
+.nib-badge--success {
+  --badge-fg: var(--nib-st-done);
+  --badge-bg: var(--nib-st-done-bg);
+}
+.nib-badge--danger {
+  --badge-fg: var(--nib-st-late);
+  --badge-bg: var(--nib-st-late-bg);
+}
+.nib-badge--brand {
+  --badge-fg: var(--nib-gold-700);
+  --badge-bg: var(--nib-gold-100);
+}
+
+/* --- Tables ------------------------------------------------------------------
+   <div class="nib-table-wrap">
+     <div class="nib-table-bar"><h2 class="nib-table-title">...</h2> ...</div>
+     <div class="nib-table-scroll"><table class="nib-table">...</table></div>
+   </div>
+   --------------------------------------------------------------------------- */
+
+.nib-table-wrap {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: var(--nib-radius-card);
+  background-color: var(--nib-surface);
+  box-shadow: var(--nib-shadow-card);
+}
+
+.nib-table-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--nib-line);
+}
+
+.nib-table-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--nib-ink);
+}
+
+/* Horizontal scroll lives here, not on the wrapper, so the masthead stays put. */
+.nib-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.nib-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--nib-text-table);
+}
+.nib-table thead {
+  border-bottom: 1px solid var(--nib-line);
+  background-color: color-mix(in srgb, var(--nib-surface-2) 70%, transparent);
+}
+.nib-table th {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--nib-ink-3);
+}
+.nib-table td {
+  padding: 0.875rem 1rem;
+  vertical-align: middle;
+  color: var(--nib-ink);
+}
+.nib-table tbody tr + tr {
+  border-top: 1px solid var(--nib-line);
+}
+.nib-table tbody tr {
+  transition: background-color 150ms;
+}
+.nib-table tbody tr:hover {
+  background-color: color-mix(in srgb, var(--nib-gold-100) 25%, transparent);
+}
+.nib-table .nib-num {
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Hexagon relief texture ---------------------------------------------------
+   White cells with soft grey shadows on light surfaces; inverted into dark
+   cells with warm lit seams in dark mode.
+
+   Sidebar:  first child of .nib-sidebar      ->  <div class="nib-rail-relief"></div>
+   Content:  first child of .nib-column       ->  <div class="nib-ground-relief">
+                                                    <div class="nib-ground-relief__a"></div>
+                                                    <div class="nib-ground-relief__b"></div>
+                                                  </div>
+   The two layers stack differently, on purpose:
+     .nib-rail-relief    sits at z -10, so the rail (a stacking context, z 40)
+                         paints its menu over it.
+     .nib-ground-relief  has no z-index. The column must not be a stacking
+                         context (see STACKING in the shell section), so the
+                         layer goes first in the column and the positioned
+                         header band and <main> after it paint over it.
+
+   Strength comes from --nib-relief-rail, --nib-relief-ground and
+   --nib-relief-ground-2 in nib-tokens.css, which switch with the theme.
+   --------------------------------------------------------------------------- */
+
+.nib-rail-relief,
+.nib-ground-relief__a,
+.nib-ground-relief__b {
+  background-image: url('textures/hex-relief.webp');
+  background-repeat: no-repeat;
+}
+
+/* The full honeycomb behind the rail, faded out under the logo. Faint, so the
+   menu labels stay the focus. */
+.nib-rail-relief {
+  position: absolute;
+  inset: 0;
+  z-index: -10;
+  pointer-events: none;
+  background-size: cover;
+  background-position: top;
+  opacity: var(--nib-relief-rail);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 7rem);
+  mask-image: linear-gradient(to bottom, transparent, #000 7rem);
+}
+
+/* Two fragments at opposite corners of the content area, each dissolving
+   towards the middle, so the texture frames the page rather than running
+   under the cards. The layer belongs to the column, not the scroll area, so it
+   stays put while the page scrolls. */
+.nib-ground-relief {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.nib-ground-relief__a,
+.nib-ground-relief__b {
+  position: absolute;
+  background-size: contain;
+  background-position: center;
+}
+.nib-ground-relief__a {
+  top: -8%;
+  right: -6%;
+  height: 116%;
+  width: min(62vh, 640px);
+  opacity: var(--nib-relief-ground);
+  -webkit-mask-image: linear-gradient(to left, #000 30%, transparent);
+  mask-image: linear-gradient(to left, #000 30%, transparent);
+}
+/* Turned half a circle, so it reads as the same wall seen from the other end. */
+.nib-ground-relief__b {
+  bottom: -30%;
+  left: -10%;
+  height: 90%;
+  width: min(48vh, 480px);
+  transform: rotate(180deg);
+  opacity: var(--nib-relief-ground-2);
+  -webkit-mask-image: linear-gradient(to left, #000 20%, transparent 90%);
+  mask-image: linear-gradient(to left, #000 20%, transparent 90%);
+}
+
+.dark .nib-rail-relief,
+.dark .nib-ground-relief__a,
+.dark .nib-ground-relief__b,
+[data-theme='dark'] .nib-rail-relief,
+[data-theme='dark'] .nib-ground-relief__a,
+[data-theme='dark'] .nib-ground-relief__b {
+  filter: invert(1) sepia(0.4);
+}
+
+/* --- Dark-mode details ------------------------------------------------------- */
+
+.dark .nib-header,
+.dark .nib-card,
+.dark .nib-table-wrap,
+[data-theme='dark'] .nib-header,
+[data-theme='dark'] .nib-card,
+[data-theme='dark'] .nib-table-wrap {
+  border: 1px solid var(--nib-line);
+}
+.dark .nib-card--interactive:hover,
+[data-theme='dark'] .nib-card--interactive:hover {
+  border-color: color-mix(in srgb, var(--nib-gold-500) 45%, transparent);
+}
+.dark .nib-nav__item[aria-current='page'],
+.dark .nib-nav__item.is-active,
+[data-theme='dark'] .nib-nav__item[aria-current='page'],
+[data-theme='dark'] .nib-nav__item.is-active {
+  background-color: color-mix(in srgb, var(--nib-gold-500) 12%, transparent);
+  color: var(--nib-gold-400);
+}
+.dark .nib-nav__item[aria-current='page'] .nib-nav__icon,
+.dark .nib-nav__item.is-active .nib-nav__icon,
+.dark .nib-icon-plate:not(.nib-icon-plate--danger, .nib-icon-plate--info, .nib-icon-plate--good),
+.dark .nib-hero__eyebrow,
+.dark .nib-btn--link,
+[data-theme='dark'] .nib-nav__item[aria-current='page'] .nib-nav__icon,
+[data-theme='dark'] .nib-nav__item.is-active .nib-nav__icon,
+[data-theme='dark']
+  .nib-icon-plate:not(.nib-icon-plate--danger, .nib-icon-plate--info, .nib-icon-plate--good),
+[data-theme='dark'] .nib-hero__eyebrow,
+[data-theme='dark'] .nib-btn--link {
+  color: var(--nib-gold-400);
+}
+.dark .nib-stat--brand,
+[data-theme='dark'] .nib-stat--brand {
+  --stat-tint: color-mix(in srgb, var(--nib-gold-500) 15%, transparent);
+  --stat-accent: var(--nib-gold-400);
+}
+/* The dark-theme red is a light coral; white on it is unreadable, so the
+   label switches to deep brown or the deep red of the danger tint. */
+.dark .nib-header-btn__count,
+[data-theme='dark'] .nib-header-btn__count {
+  color: var(--nib-brown-900);
+}
+.dark .nib-btn--danger,
+[data-theme='dark'] .nib-btn--danger {
+  color: var(--nib-st-late-bg);
+}
+.dark .nib-badge--brand,
+[data-theme='dark'] .nib-badge--brand {
+  --badge-fg: var(--nib-gold-400);
+  --badge-bg: color-mix(in srgb, var(--nib-gold-500) 15%, transparent);
+}
+.dark .nib-table tbody tr:hover,
+[data-theme='dark'] .nib-table tbody tr:hover {
+  background-color: color-mix(in srgb, var(--nib-surface-2) 70%, transparent);
+}
+
+/* --- Responsive, print and motion -------------------------------------------- */
+
+/* With the rail a drawer below 1024px, the page keeps the 24px gutter on both
+   sides and loses some height; below 640px the gutter narrows to 16px. */
+@media (max-width: 1023px) {
+  .nib-page {
+    padding: 1.5rem;
+  }
+  /* The second fragment has no room to frame anything at this width. */
+  .nib-ground-relief__b {
+    display: none;
+  }
+}
+
+@media (max-width: 639px) {
+  .nib-header-band {
+    padding: 0.75rem 1rem 0;
+  }
+  .nib-page {
+    padding: 1.5rem 1rem;
+  }
+  .nib-header {
+    padding: 0 0.75rem;
+  }
+  .nib-header__actions {
+    gap: 0.25rem;
+  }
+  .nib-header-search input {
+    padding-right: 0.5rem;
+  }
+  .nib-header-search kbd {
+    display: none;
+  }
+}
+
+/* The shell is chrome, not content. The page also lets go of its fixed
+   height, or only the first screenful of a long page would print. */
+@media print {
+  .nib-sidebar,
+  .nib-scrim,
+  .nib-header-band,
+  .nib-rail-relief,
+  .nib-ground-relief,
+  .nib-no-print {
+    display: none !important;
+  }
+  .nib-shell,
+  .nib-column,
+  .nib-main {
+    display: block;
+    height: auto;
+    overflow: visible;
+  }
+  body,
+  .nib-shell {
+    background: #ffffff;
+  }
+  .nib-page {
+    padding: 0;
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nib-page {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

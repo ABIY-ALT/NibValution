@@ -1,0 +1,13 @@
+# Sheet: ADDIS ABABA COORDINATE LIST  unique formula patterns: 4
+
+## A2 (+82 copies, last FI2)
+=IF(HOME!$E$26=B3,IF(B5=IF(HOME!$E$20="RESIDENTIAL","Residential",IF(OR(HOME!$E$20="COMMERCIAL",HOME!$E$20="SHOP",HOME!$E$20="HOTEL"),"Commercial","Industrial")),IFERROR(IF(PtInPoly(HOME!$E$27, HOME!$F$27, A$8:INDEX(B$8:B$1000, MAX(COUNTIF(A$8:A$1000, "<>"), COUNTIF(B$8:B$1000, "<>")))),"LOCATION IS INSIDE HERE","LOCATION IS NOT INSIDE HERE"),PtInPoly(HOME!$E$27, HOME!$F$27, A$8:INDEX(B$8:B$1000, MAX(COUNTIF(A$8:A$1000, "<>"))))),"Property Type didnt Match"),"City Name didn't match")
+
+## C3 (+81 copies, last FI3)
+=$A$3
+
+## D3 (+81 copies, last FJ3)
+=$B$3
+
+## FL3
+=COUNTIF(2:2,"#UnclosedPolygon!")

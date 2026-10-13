@@ -1,0 +1,23 @@
+-- The Scope of Work returns a checked case to the Valuator Maker, who prepares
+-- the cover page before the case goes for final approval. This is the task that
+-- represents that step.
+ALTER TYPE "TaskType" ADD VALUE 'GENERATE_COVER_PAGE';
+
+-- ---------------------------------------------------------------------------
+-- NOTE FOR WHOEVER GENERATES THE NEXT MIGRATION
+-- ---------------------------------------------------------------------------
+-- `prisma migrate dev` proposed dropping seven GIN trigram indexes here:
+--
+--   civil_properties_lhc_trgm, machinery_serial_trgm, vehicles_plate_trgm,
+--   vehicles_chassis_trgm, valuation_cases_owner_name_trgm,
+--   valuation_cases_applicant_name_trgm, valuation_cases_case_number_trgm
+--
+-- Those DROP statements were deliberately removed. Prisma has no syntax for a
+-- GIN trigram index, so it cannot see them in schema.prisma and reports them as
+-- drift on every generation. They are not drift - they are what makes the
+-- partial-match search in spec section 24 possible ("show me anything with
+-- Tesfaye in the owner name"); a b-tree cannot serve that query.
+--
+-- Every future migration will propose the same drops. Strip them, exactly as
+-- here, or the search silently degrades to full table scans.
+-- See prisma/migrations/README.md.

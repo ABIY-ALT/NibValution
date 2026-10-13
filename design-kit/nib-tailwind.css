@@ -1,0 +1,249 @@
+/* ===========================================================================
+   NIB INTERNATIONAL BANK - TAILWIND v4 THEME
+   Registers the NIB tokens as Tailwind utilities, with the same names the NIB
+   Property Valuation code uses: bg-app, bg-surface, text-ink, text-ink-3,
+   border-line, bg-nib-gold-500, text-nib-brown-900, bg-st-done-bg,
+   shadow-card, shadow-brand, text-section, rounded-(--radius-card) ...
+   so component markup can be copied across unchanged.
+
+   In the other project's main stylesheet:
+
+     @import 'tailwindcss';
+     @import './nib/nib-tokens.css';
+     @import './nib/nib-tailwind.css';
+
+   The values live in nib-tokens.css. `inline` makes each utility read the
+   --nib-* variable directly, so dark mode switches correctly wherever the
+   .dark class is set, and opacity modifiers (bg-nib-gold-500/15) still work.
+   =========================================================================== */
+
+@custom-variant dark (&:where(.dark, .dark *, [data-theme='dark'], [data-theme='dark'] *));
+
+@theme inline {
+  /* Brand */
+  --color-nib-brown-900: var(--nib-brown-900);
+  --color-nib-brown-800: var(--nib-brown-800);
+  --color-nib-brown-700: var(--nib-brown-700);
+  --color-nib-brown-600: var(--nib-brown-600);
+  --color-nib-gold-800: var(--nib-gold-800);
+  --color-nib-gold-700: var(--nib-gold-700);
+  --color-nib-gold-600: var(--nib-gold-600);
+  --color-nib-gold-500: var(--nib-gold-500);
+  --color-nib-gold-400: var(--nib-gold-400);
+  --color-nib-gold-200: var(--nib-gold-200);
+  --color-nib-gold-100: var(--nib-gold-100);
+  --color-nib-cream: var(--nib-cream);
+
+  /* Surfaces and text */
+  --color-app: var(--nib-app);
+  --color-surface: var(--nib-surface);
+  --color-surface-2: var(--nib-surface-2);
+  --color-surface-3: var(--nib-surface-3);
+  --color-line: var(--nib-line);
+  --color-line-strong: var(--nib-line-strong);
+  --color-scrim: var(--nib-scrim);
+  --color-ink: var(--nib-ink);
+  --color-ink-2: var(--nib-ink-2);
+  --color-ink-3: var(--nib-ink-3);
+
+  /* Navigation rail */
+  --color-sidebar: var(--nib-sidebar);
+  --color-sidebar-2: var(--nib-sidebar-2);
+  --color-sidebar-ink: var(--nib-sidebar-ink);
+  --color-sidebar-ink-2: var(--nib-sidebar-ink-2);
+  --color-sidebar-line: var(--nib-sidebar-line);
+
+  --color-chart: var(--nib-chart);
+
+  /* Status */
+  --color-st-neutral: var(--nib-st-neutral);
+  --color-st-neutral-bg: var(--nib-st-neutral-bg);
+  --color-st-info: var(--nib-st-info);
+  --color-st-info-bg: var(--nib-st-info-bg);
+  --color-st-active: var(--nib-st-active);
+  --color-st-active-bg: var(--nib-st-active-bg);
+  --color-st-wait: var(--nib-st-wait);
+  --color-st-wait-bg: var(--nib-st-wait-bg);
+  --color-st-review: var(--nib-st-review);
+  --color-st-review-bg: var(--nib-st-review-bg);
+  --color-st-done: var(--nib-st-done);
+  --color-st-done-bg: var(--nib-st-done-bg);
+  --color-st-late: var(--nib-st-late);
+  --color-st-late-bg: var(--nib-st-late-bg);
+
+  /* Text on a solid status fill: bg-st-late text-on-late, and so on. Never
+     text-white - the dark-mode fills are light. */
+  --color-on-info: var(--nib-on-info);
+  --color-on-review: var(--nib-on-review);
+  --color-on-done: var(--nib-on-done);
+  --color-on-late: var(--nib-on-late);
+
+  /* shadcn/ui-style aliases, so libraries built on those names pick up NIB */
+  --color-background: var(--nib-app);
+  --color-foreground: var(--nib-ink);
+  --color-card: var(--nib-surface);
+  --color-card-foreground: var(--nib-ink);
+  --color-muted: var(--nib-surface-2);
+  --color-muted-foreground: var(--nib-ink-3);
+  --color-border: var(--nib-line);
+  --color-input: var(--nib-line);
+  --color-ring: var(--nib-gold-500);
+  --color-primary: var(--nib-gold-500);
+  --color-primary-foreground: var(--nib-brown-900);
+  --color-accent: var(--nib-gold-500);
+  --color-accent-foreground: var(--nib-brown-900);
+  --color-destructive: var(--nib-st-late);
+  --color-destructive-foreground: var(--nib-on-late);
+
+  /* Type */
+  --font-sans: var(--nib-font);
+  --text-hero: var(--nib-text-hero);
+  --text-page: var(--nib-text-page);
+  --text-section: var(--nib-text-section);
+  --text-body: var(--nib-text-body);
+  --text-table: var(--nib-text-table);
+  --text-meta: var(--nib-text-meta);
+
+  /* Shadows */
+  --shadow-card: var(--nib-shadow-card);
+  --shadow-raised: var(--nib-shadow-raised);
+  --shadow-panel: var(--nib-shadow-panel);
+  --shadow-overlay: var(--nib-shadow-overlay);
+  --shadow-rail: var(--nib-shadow-rail);
+  --shadow-brand: var(--nib-shadow-brand);
+  --shadow-brand-raised: var(--nib-shadow-brand-raised);
+}
+
+/* The NIB components write radii as rounded-(--radius-card), which reads the
+   variable directly rather than through a utility, so these must exist. */
+:root {
+  --radius-control: var(--nib-radius-control);
+  --radius-card: var(--nib-radius-card);
+  --radius-panel: var(--nib-radius-panel);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--nib-app);
+    color: var(--nib-ink);
+    font-family: var(--nib-font);
+    font-size: var(--nib-text-body);
+    line-height: 1.5;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--nib-gold-500);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background-color: var(--nib-gold-200);
+    color: var(--nib-brown-900);
+  }
+
+  /* Scrollbars tuned to the warm palette rather than the OS default grey. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--nib-line-strong) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--nib-line-strong);
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* The utilities below are used by the NIB shell components - sidebar.tsx,
+   hex-relief.tsx and the (app)/layout.tsx shell - so those files can be
+   copied across unchanged. */
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Every page fades and lifts in on navigation, so a route change reads as a
+     transition rather than a flash of replaced content. */
+  .page-enter {
+    animation: nib-page-enter 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @keyframes nib-page-enter {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* A scroll area whose bar shows only while the pointer is over it, so the
+     navigation rail does not carry a permanent stripe down its edge. */
+  .scroll-quiet {
+    scrollbar-color: transparent transparent;
+  }
+  .scroll-quiet:hover,
+  .scroll-quiet:focus-within {
+    scrollbar-color: var(--nib-line-strong) transparent;
+  }
+  .scroll-quiet::-webkit-scrollbar-thumb {
+    background-color: transparent;
+  }
+  .scroll-quiet:hover::-webkit-scrollbar-thumb,
+  .scroll-quiet:focus-within::-webkit-scrollbar-thumb {
+    background-color: var(--nib-line-strong);
+  }
+
+  /* Print: the shell is chrome, not content. */
+  @media print {
+    .no-print {
+      display: none !important;
+    }
+    html,
+    body {
+      background: #ffffff !important;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .page-enter {
+      animation: none;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  /* The hexagon relief. Copy textures/hex-relief.webp into the project's
+     public/static folder so it is served at /textures/hex-relief.webp, or
+     change the path below. Dark mode inverts it into dark cells with warm lit
+     seams. Placement and strength: react/hex-relief.tsx in this kit, and the
+     --nib-relief-* tokens in nib-tokens.css. */
+  .hex-relief {
+    background-image: url('/textures/hex-relief.webp');
+    background-repeat: no-repeat;
+  }
+  .dark .hex-relief,
+  [data-theme='dark'] .hex-relief {
+    filter: invert(1) sepia(0.4);
+  }
+}

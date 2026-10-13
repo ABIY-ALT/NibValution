@@ -1,0 +1,19 @@
+# Sheet: Picture  unique formula patterns: 6
+
+## B55
+='REPORT-COMPLETED'!F6
+
+## I55
+='REPORT-COMPLETED'!E9
+
+## C56
+='REPORT-COMPLETED'!E15
+
+## J56
+='REPORT-COMPLETED'!E11
+
+## C57
+='REPORT-COMPLETED'!K7
+
+## C58
+='REPORT-COMPLETED'!K164

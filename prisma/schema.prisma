@@ -1,0 +1,1542 @@
+// NIB International Bank - Property Valuation Management System
+// ---------------------------------------------------------------------------
+// Design notes that apply throughout this schema:
+//
+//  * Every monetary column is Decimal(20,2). JavaScript floats are never the
+//    authoritative store for an ETB value (spec section 28).
+//  * Configuration - thresholds, parameters, categories, request types, SLA -
+//    lives in tables, never in code (section 37).
+//  * ApprovalThreshold, FinalLetterAuthority and ValuationParameterSet are
+//    temporal (effectiveFrom/effectiveTo) so a case is always judged against
+//    the rules in force when it was requested. Raising a threshold next year
+//    must not make last year's approvals look non-compliant.
+//  * AuditLog and CalculationRun are append-only; database triggers in the
+//    migration enforce that, so an application bug cannot erase history.
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ===========================================================================
+// ENUMS
+// ===========================================================================
+
+enum OrganizationType {
+  BRANCH
+  DISTRICT
+  HEAD_OFFICE_UNIT
+}
+
+enum Discipline {
+  CIVIL
+  MECHANICAL
+  BOTH
+  NONE
+}
+
+enum CaseStatus {
+  DRAFT
+  REQUESTED
+  ASSIGNED
+  ON_PROGRESS
+  NOT_VISITED
+  PENDING
+  AWAITING_REQUESTER
+  SUBMITTED_FOR_CHECKING
+  CHECKING
+  COMMENTED
+  RETURNED_FOR_CORRECTION
+  CHECKED
+  PENDING_MANAGER_APPROVAL
+  PENDING_DIRECTOR_APPROVAL
+  APPROVED
+  SIGNED
+  COMPLETED
+  ARCHIVED
+  CANCELLED
+}
+
+enum ApprovalLevel {
+  CHECKER
+  MANAGER
+  DIRECTOR
+}
+
+enum ApprovalDecision {
+  APPROVED
+  REJECTED
+  RETURNED
+}
+
+enum LandHoldingRight {
+  FREEHOLD
+  LEASE
+  BOTH
+}
+
+enum ConstructionStatus {
+  COMPLETED
+  UNDER_CONSTRUCTION
+  ABANDONED
+}
+
+enum ConditionGrade {
+  EXCELLENT
+  VERY_GOOD
+  GOOD
+  FAIR
+  POOR
+  SCRAP
+}
+
+enum MechanicalItemKind {
+  VEHICLE
+  MACHINERY
+}
+
+enum ScanStatus {
+  PENDING
+  CLEAN
+  INFECTED
+  QUARANTINED
+  SKIPPED
+}
+
+enum ReportType {
+  VALUATION
+  COVER_PAGE
+  FINAL_LETTER
+}
+
+enum SignatureStatus {
+  VALID
+  REVOKED
+  FAILED
+}
+
+enum SlaStatus {
+  GREEN
+  WARNING
+  BREACHED
+  PAUSED
+  CLOSED
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum TaskType {
+  ASSIGN_MAKER
+  PERFORM_VALUATION
+  ASSIGN_CHECKER
+  PERFORM_CHECKING
+  MANAGER_APPROVAL
+  DIRECTOR_APPROVAL
+  SIGN
+  GENERATE_COVER_PAGE
+  GENERATE_FINAL_LETTER
+  CORRECT_VALUATION
+}
+
+enum ValuationApproachKind {
+  COST
+  SALES
+  MARKET
+}
+
+enum DepreciationMethod {
+  STRAIGHT_LINE
+  AGE_LIFE_CONDITION
+  DECLINING_BALANCE
+}
+
+enum ParameterType {
+  RATE
+  FACTOR
+  PERCENT
+  AMOUNT
+  YEARS
+  TABLE
+}
+
+/// How a site check-in compares with the property's recorded location.
+enum SiteVisitCheck {
+  VERIFIED
+  OUTSIDE_RADIUS
+  LOW_ACCURACY
+  LOCATION_SET
+  NO_LOCATION
+}
+
+enum ValuationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_CHECK
+  CHECKED
+  APPROVED
+  SUPERSEDED
+}
+
+// ===========================================================================
+// IDENTITY, ORGANISATION, RBAC
+// ===========================================================================
+
+model Organization {
+  id        String           @id @default(uuid()) @db.Uuid
+  code      String           @unique
+  name      String
+  type      OrganizationType
+  parentId  String?          @db.Uuid
+  isActive  Boolean          @default(true)
+  createdAt DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime         @updatedAt @db.Timestamptz(6)
+
+  parent   Organization?   @relation("OrgHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children Organization[]  @relation("OrgHierarchy")
+  users    User[]
+  cases    ValuationCase[]
+
+  @@index([parentId])
+  @@index([type, isActive])
+  @@map("organizations")
+}
+
+model Department {
+  id        String   @id @default(uuid()) @db.Uuid
+  code      String   @unique
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  users User[]
+  cases ValuationCase[]
+
+  @@map("departments")
+}
+
+model User {
+  id             String     @id @default(uuid()) @db.Uuid
+  employeeId     String     @unique
+  email          String     @unique
+  fullName       String
+  phone          String?
+  organizationId String?    @db.Uuid
+  departmentId   String?    @db.Uuid
+  discipline     Discipline @default(NONE)
+  isActive       Boolean    @default(true)
+  mfaEnabled     Boolean    @default(false)
+  mfaSecret      String?
+  failedAttempts Int        @default(0)
+  lockedUntil    DateTime?  @db.Timestamptz(6)
+  lastLoginAt    DateTime?  @db.Timestamptz(6)
+  createdAt      DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime   @updatedAt @db.Timestamptz(6)
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  department   Department?   @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
+  credential      Credential?
+  passwordHistory PasswordHistory[]
+  sessions        Session[]
+  roles           UserRole[]
+
+  requestedCases      ValuationCase[] @relation("CaseRequestedBy")
+  makerCases          ValuationCase[] @relation("CaseMaker")
+  checkerCases        ValuationCase[] @relation("CaseChecker")
+  makerManagerCases   ValuationCase[] @relation("CaseMakerManager")
+  checkerManagerCases ValuationCase[] @relation("CaseCheckerManager")
+
+  tasks               WorkflowTask[]
+  workflowHistory     WorkflowHistory[]
+  comments            Comment[]
+  approvals           Approval[]
+  signatures          DigitalSignature[]
+  uploadedDocuments   PropertyDocument[]    @relation("DocumentUploader")
+  deletedDocuments    PropertyDocument[]    @relation("DocumentDeleter")
+  generatedReports    Report[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+  calculationRuns     CalculationRun[]
+  preparedValuations  Valuation[]           @relation("ValuationPreparer")
+  checkedValuations   Valuation[]           @relation("ValuationChecker")
+  returnedCorrections CorrectionCycle[]     @relation("CorrectionReturner")
+  siteVisits          SiteVisit[]
+  configChanges       SystemConfiguration[] @relation("ConfigUpdater")
+
+  @@index([organizationId])
+  @@index([departmentId])
+  @@index([isActive, discipline])
+  @@map("users")
+}
+
+/// Split from User so that loading a user for display never pulls a password
+/// hash into memory or into a serialised server-component payload.
+model Credential {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @unique @db.Uuid
+  passwordHash String
+  algorithm    String    @default("argon2id")
+  params       Json
+  mustChange   Boolean   @default(true)
+  expiresAt    DateTime? @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("credentials")
+}
+
+model PasswordHistory {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @db.Uuid
+  passwordHash String
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("password_history")
+}
+
+/// Server-side sessions rather than stateless tokens: disabling a user must
+/// terminate their live sessions immediately, which a self-contained JWT
+/// cannot guarantee.
+model Session {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @db.Uuid
+  tokenHash         String    @unique
+  ipAddress         String?
+  userAgent         String?
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  lastSeenAt        DateTime  @default(now()) @db.Timestamptz(6)
+  expiresAt         DateTime  @db.Timestamptz(6)
+  absoluteExpiresAt DateTime  @db.Timestamptz(6)
+  revokedAt         DateTime? @db.Timestamptz(6)
+  /// Set by a fresh password re-entry; gates digital signing (section 19).
+  reauthenticatedAt DateTime? @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  /// A disabled role keeps its grants and its history but is offered nowhere
+  /// new. Roles are never deleted: the audit trail names the role a person held
+  /// when they acted, and that name must keep resolving.
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  resource    String
+  action      String
+  description String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  roles RolePermission[]
+
+  @@index([resource])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String   @db.Uuid
+  permissionId String   @db.Uuid
+  grantedAt    DateTime @default(now()) @db.Timestamptz(6)
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId     String   @db.Uuid
+  roleId     String   @db.Uuid
+  assignedAt DateTime @default(now()) @db.Timestamptz(6)
+  assignedBy String?  @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+// ===========================================================================
+// CONFIGURATION (section 37 - none of this may be hard-coded)
+// ===========================================================================
+
+model RequestType {
+  id                String   @id @default(uuid()) @db.Uuid
+  code              String   @unique
+  name              String
+  description       String?
+  requiresPriorCase Boolean  @default(false)
+  sortOrder         Int      @default(0)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @db.Timestamptz(6)
+
+  cases ValuationCase[]
+
+  @@map("request_types")
+}
+
+model PropertyCategory {
+  id          String     @id @default(uuid()) @db.Uuid
+  code        String     @unique
+  name        String
+  description String?
+  discipline  Discipline
+  parentId    String?    @db.Uuid
+  sortOrder   Int        @default(0)
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime   @updatedAt @db.Timestamptz(6)
+
+  parent   PropertyCategory?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children PropertyCategory[] @relation("CategoryTree")
+
+  civilProperties CivilProperty[]
+  buildings       CivilBuilding[]
+  machinery       Machinery[]
+  vehicles        Vehicle[]
+
+  @@index([discipline, isActive])
+  @@index([parentId])
+  @@map("property_categories")
+}
+
+/// Approval routing bands (section 17). Stored as [minAmount, maxAmount) with a
+/// null maxAmount meaning unbounded, so gaps and overlaps are unrepresentable.
+/// approvalChain is an ordered array of role codes, e.g. ["CHECKER","MAKER_MANAGER"].
+model ApprovalThreshold {
+  id            String    @id @default(uuid()) @db.Uuid
+  name          String
+  minAmount     Decimal   @db.Decimal(20, 2)
+  maxAmount     Decimal?  @db.Decimal(20, 2)
+  approvalChain Json
+  effectiveFrom DateTime  @db.Timestamptz(6)
+  effectiveTo   DateTime? @db.Timestamptz(6)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@index([effectiveFrom, effectiveTo])
+  @@index([minAmount])
+  @@map("approval_thresholds")
+}
+
+/// Section 18: who issues the final letter. Deliberately a separate ladder from
+/// ApprovalThreshold - the source uses ETB 100M here and ETB 80M for approval.
+model FinalLetterAuthority {
+  id            String    @id @default(uuid()) @db.Uuid
+  name          String
+  minAmount     Decimal   @db.Decimal(20, 2)
+  maxAmount     Decimal?  @db.Decimal(20, 2)
+  issuerRole    String
+  effectiveFrom DateTime  @db.Timestamptz(6)
+  effectiveTo   DateTime? @db.Timestamptz(6)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@index([effectiveFrom, effectiveTo])
+  @@map("final_letter_authorities")
+}
+
+/// A named, versioned snapshot of every valuation parameter. A Valuation
+/// references the set version it used, which is what makes a historical
+/// figure reproducible years later (section 28).
+model ValuationParameterSet {
+  id            String    @id @default(uuid()) @db.Uuid
+  code          String
+  version       Int
+  description   String?
+  effectiveFrom DateTime  @db.Timestamptz(6)
+  effectiveTo   DateTime? @db.Timestamptz(6)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+
+  parameters ValuationParameter[]
+  valuations Valuation[]
+
+  @@unique([code, version])
+  @@index([effectiveFrom, effectiveTo])
+  @@map("valuation_parameter_sets")
+}
+
+model ValuationParameter {
+  id           String        @id @default(uuid()) @db.Uuid
+  setId        String        @db.Uuid
+  key          String
+  name         String
+  type         ParameterType
+  numericValue Decimal?      @db.Decimal(20, 6)
+  jsonValue    Json?
+  unit         String?
+  discipline   Discipline?
+  categoryCode String?
+  notes        String?
+
+  set ValuationParameterSet @relation(fields: [setId], references: [id], onDelete: Cascade)
+
+  @@unique([setId, key, categoryCode])
+  @@index([setId])
+  @@map("valuation_parameters")
+}
+
+model SlaPolicy {
+  id                String   @id @default(uuid()) @db.Uuid
+  code              String   @unique
+  name              String
+  totalWorkingDays  Int
+  warningPercent    Int      @default(80)
+  /// Per-stage budgets in working days, e.g. { "ASSIGNMENT": 1, "VALUATION": 2 }.
+  stageBudgets      Json?
+  workingDaysOfWeek Json     @default("[1,2,3,4,5]")
+  countCalendarDays Boolean  @default(false)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @db.Timestamptz(6)
+
+  slaRecords SlaRecord[]
+
+  @@map("sla_policies")
+}
+
+model Holiday {
+  id          String   @id @default(uuid()) @db.Uuid
+  date        DateTime @db.Date
+  name        String
+  isRecurring Boolean  @default(false)
+
+  @@unique([date, name])
+  @@index([date])
+  @@map("holidays")
+}
+
+model ReportTemplate {
+  id        String     @id @default(uuid()) @db.Uuid
+  code      String
+  version   Int
+  type      ReportType
+  name      String
+  /// Template body plus layout metadata; pinned by every Report that uses it,
+  /// so re-rendering an old report reproduces the original document.
+  body      Json
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now()) @db.Timestamptz(6)
+
+  reports Report[]
+
+  @@unique([code, version])
+  @@map("report_templates")
+}
+
+model NotificationRule {
+  id        String   @id @default(uuid()) @db.Uuid
+  eventType String
+  /// Role codes to notify, plus channels, e.g. ["IN_APP","EMAIL"].
+  roles     Json
+  channels  Json
+  template  String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([eventType])
+  @@map("notification_rules")
+}
+
+model SystemConfiguration {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique
+  value       Json
+  valueType   String
+  description String?
+  isSecret    Boolean  @default(false)
+  updatedById String?  @db.Uuid
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+
+  updatedBy User? @relation("ConfigUpdater", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@map("system_configurations")
+}
+
+/// Case numbers are allocated from this table inside the creating transaction,
+/// so concurrent submissions can neither collide nor leave gaps that would look
+/// like deleted records to an auditor.
+model CaseNumberSequence {
+  year      Int      @id
+  lastValue Int      @default(0)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("case_number_sequences")
+}
+
+// ===========================================================================
+// VALUATION CASE (aggregate root)
+// ===========================================================================
+
+model ValuationCase {
+  id            String     @id @default(uuid()) @db.Uuid
+  caseNumber    String     @unique
+  requestTypeId String     @db.Uuid
+  discipline    Discipline
+  status        CaseStatus @default(DRAFT)
+  /// Optimistic lock. Every workflow transition requires the caller's version
+  /// to match, so two managers cannot both "win" an assignment (rule 14).
+  version       Int        @default(1)
+
+  requestingOrgId String @db.Uuid
+  departmentId    String @db.Uuid
+  requestedById   String @db.Uuid
+
+  makerId          String? @db.Uuid
+  checkerId        String? @db.Uuid
+  makerManagerId   String? @db.Uuid
+  checkerManagerId String? @db.Uuid
+
+  applicantName  String
+  applicantPhone String?
+  applicantTin   String?
+
+  ownerName     String
+  ownerPhone    String?
+  ownerIdNumber String?
+
+  purpose     String?
+  remarks     String?
+  priorCaseId String? @db.Uuid
+
+  /// Case-level totals. Written only by the server-side valuation engine.
+  finalValue      Decimal?       @db.Decimal(20, 2)
+  forcedSaleValue Decimal?       @db.Decimal(20, 2)
+  currency        String         @default("ETB") @db.Char(3)
+  approvalLevel   ApprovalLevel?
+
+  requestedAt  DateTime? @db.Timestamptz(6)
+  assignedAt   DateTime? @db.Timestamptz(6)
+  startedAt    DateTime? @db.Timestamptz(6)
+  submittedAt  DateTime? @db.Timestamptz(6)
+  checkedAt    DateTime? @db.Timestamptz(6)
+  approvedAt   DateTime? @db.Timestamptz(6)
+  signedAt     DateTime? @db.Timestamptz(6)
+  completedAt  DateTime? @db.Timestamptz(6)
+  archivedAt   DateTime? @db.Timestamptz(6)
+  cancelledAt  DateTime? @db.Timestamptz(6)
+  cancelReason String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  requestType    RequestType  @relation(fields: [requestTypeId], references: [id], onDelete: Restrict)
+  requestingOrg  Organization @relation(fields: [requestingOrgId], references: [id], onDelete: Restrict)
+  department     Department   @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  requestedBy    User         @relation("CaseRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  maker          User?        @relation("CaseMaker", fields: [makerId], references: [id], onDelete: Restrict)
+  checker        User?        @relation("CaseChecker", fields: [checkerId], references: [id], onDelete: Restrict)
+  makerManager   User?        @relation("CaseMakerManager", fields: [makerManagerId], references: [id], onDelete: Restrict)
+  checkerManager User?        @relation("CaseCheckerManager", fields: [checkerManagerId], references: [id], onDelete: Restrict)
+
+  priorCase    ValuationCase?  @relation("CaseLineage", fields: [priorCaseId], references: [id], onDelete: Restrict)
+  derivedCases ValuationCase[] @relation("CaseLineage")
+
+  civilProperty      CivilProperty?
+  mechanicalProperty MechanicalProperty?
+  documents          PropertyDocument[]
+  siteVisits         SiteVisit[]
+  valuations         Valuation[]
+  tasks              WorkflowTask[]
+  history            WorkflowHistory[]
+  corrections        CorrectionCycle[]
+  comments           Comment[]
+  approvals          Approval[]
+  signatures         DigitalSignature[]
+  reports            Report[]
+  notifications      Notification[]
+  slaRecord          SlaRecord?
+
+  @@index([status, departmentId])
+  @@index([makerId, status])
+  @@index([checkerId, status])
+  @@index([requestingOrgId, requestedAt])
+  @@index([requestingOrgId, createdAt])
+  @@index([departmentId, createdAt])
+  @@index([requestTypeId, requestedAt])
+  @@index([discipline, status])
+  @@index([finalValue])
+  @@index([ownerName])
+  @@index([applicantName])
+  @@map("valuation_cases")
+}
+
+// ===========================================================================
+// CIVIL PROPERTY
+// ===========================================================================
+
+model CivilProperty {
+  id         String @id @default(uuid()) @db.Uuid
+  caseId     String @unique @db.Uuid
+  categoryId String @db.Uuid
+
+  lhcNumber           String?
+  subCity             String?
+  woreda              String?
+  kebele              String?
+  houseNumber         String?
+  geographicLocation  String?
+  latitude            Decimal?         @db.Decimal(10, 7)
+  longitude           Decimal?         @db.Decimal(10, 7)
+  landHoldingRight    LandHoldingRight
+  plotArea            Decimal?         @db.Decimal(18, 4)
+  leaseRemainingYears Int?
+  leaseUnpaidBalance  Decimal?         @db.Decimal(20, 2)
+  leaseAnnualRate     Decimal?         @db.Decimal(20, 2)
+  boundaryDescription String?
+  remarks             String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  case      ValuationCase    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  category  PropertyCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  buildings CivilBuilding[]
+
+  @@index([lhcNumber])
+  @@index([subCity, woreda])
+  @@map("civil_properties")
+}
+
+/// Up to 40 buildings per property (section 6). The limit is enforced by a
+/// server guard reading a configuration value, and buildingNumber is unique
+/// per property so a duplicate cannot be created by a concurrent request.
+model CivilBuilding {
+  id         String  @id @default(uuid()) @db.Uuid
+  propertyId String  @db.Uuid
+  categoryId String? @db.Uuid
+
+  buildingNumber     Int
+  buildingType       String
+  floorCount         Int?
+  grossArea          Decimal?           @db.Decimal(18, 4)
+  builtUpArea        Decimal?           @db.Decimal(18, 4)
+  constructionStatus ConstructionStatus @default(COMPLETED)
+  constructionYear   Int?
+  condition          ConditionGrade?
+  progressPercent    Decimal?           @db.Decimal(5, 2)
+  /// Free-form but validated structure/finishing descriptors, kept as JSON so
+  /// administrators can extend the checklist without a schema migration.
+  structure          Json?
+  finishing          Json?
+  services           Json?
+  remarks            String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  property CivilProperty     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  category PropertyCategory? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  elements BuildingElement[]
+
+  @@unique([propertyId, buildingNumber])
+  @@index([propertyId])
+  @@map("civil_buildings")
+}
+
+/// Per-element completion weights, used to value a property under construction
+/// as replacement cost x progress (assumption 3.6).
+model BuildingElement {
+  id              String  @id @default(uuid()) @db.Uuid
+  buildingId      String  @db.Uuid
+  elementCode     String
+  elementName     String
+  weightPercent   Decimal @db.Decimal(5, 2)
+  completePercent Decimal @default(0) @db.Decimal(5, 2)
+
+  building CivilBuilding @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@unique([buildingId, elementCode])
+  @@map("building_elements")
+}
+
+// ===========================================================================
+// MECHANICAL PROPERTY
+// ===========================================================================
+
+model MechanicalProperty {
+  id     String @id @default(uuid()) @db.Uuid
+  caseId String @unique @db.Uuid
+
+  plantName           String?
+  installationAddress String?
+  latitude            Decimal? @db.Decimal(10, 7)
+  longitude           Decimal? @db.Decimal(10, 7)
+  operationalStatus   String?
+  remarks             String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  case      ValuationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  vehicles  Vehicle[]
+  machinery Machinery[]
+
+  @@map("mechanical_properties")
+}
+
+model Vehicle {
+  id         String  @id @default(uuid()) @db.Uuid
+  propertyId String  @db.Uuid
+  categoryId String? @db.Uuid
+  itemNumber Int
+
+  ownerName       String?
+  plateNumber     String?
+  chassisNumber   String?
+  engineNumber    String?
+  make            String?
+  model           String?
+  manufactureYear Int?
+  capacity        String?
+  horsePower      Decimal?        @db.Decimal(12, 2)
+  cylinderCount   Int?
+  axleNumber      Int?
+  colour          String?
+  libreReference  String?
+  condition       ConditionGrade?
+  mileage         Decimal?        @db.Decimal(14, 2)
+  remarks         String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  property MechanicalProperty @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  category PropertyCategory?  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@unique([propertyId, itemNumber])
+  @@index([plateNumber])
+  @@index([chassisNumber])
+  @@map("vehicles")
+}
+
+model Machinery {
+  id         String  @id @default(uuid()) @db.Uuid
+  propertyId String  @db.Uuid
+  categoryId String? @db.Uuid
+  itemNumber Int
+
+  ownerName            String?
+  equipmentName        String
+  manufacturer         String?
+  model                String?
+  serialNumber         String?
+  manufactureYear      Int?
+  capacity             String?
+  countryOfOrigin      String?
+  installationLocation String?
+  condition            ConditionGrade?
+  purchaseDate         DateTime?       @db.Date
+  purchasePrice        Decimal?        @db.Decimal(20, 2)
+  insuranceValue       Decimal?        @db.Decimal(20, 2)
+  cifValue             Decimal?        @db.Decimal(20, 2)
+  remainingLifeYears   Decimal?        @db.Decimal(6, 2)
+  remarks              String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  property MechanicalProperty @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  category PropertyCategory?  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@unique([propertyId, itemNumber])
+  @@index([serialNumber])
+  @@map("machinery")
+}
+
+// ===========================================================================
+// DOCUMENTS
+// ===========================================================================
+
+model DocumentCategory {
+  id          String      @id @default(uuid()) @db.Uuid
+  code        String      @unique
+  name        String
+  description String?
+  discipline  Discipline?
+  isMandatory Boolean     @default(false)
+  sortOrder   Int         @default(0)
+  isActive    Boolean     @default(true)
+
+  documents PropertyDocument[]
+
+  @@map("document_categories")
+}
+
+/// storageKey is an opaque random key. It is never returned to a client;
+/// documents are addressed only by id (section 8, rule 6).
+model PropertyDocument {
+  id               String     @id @default(uuid()) @db.Uuid
+  caseId           String     @db.Uuid
+  categoryId       String     @db.Uuid
+  originalFilename String
+  storageKey       String     @unique
+  mimeType         String
+  sizeBytes        Int
+  sha256           String
+  version          Int        @default(1)
+  supersedesId     String?    @unique @db.Uuid
+  scanStatus       ScanStatus @default(PENDING)
+  scanDetail       String?
+  description      String?
+
+  uploadedById String   @db.Uuid
+  uploadedAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  deletedAt     DateTime? @db.Timestamptz(6)
+  deletedById   String?   @db.Uuid
+  deletedReason String?
+
+  /// A photo taken during a site visit: the phone's position when it was
+  /// uploaded, judged against the property like the visit's own check-in.
+  /// locationCheck is null when there was nothing to compare against.
+  siteVisitId    String?         @db.Uuid
+  latitude       Decimal?        @db.Decimal(10, 7)
+  longitude      Decimal?        @db.Decimal(10, 7)
+  accuracyMeters Decimal?        @db.Decimal(10, 2)
+  distanceMeters Decimal?        @db.Decimal(12, 2)
+  locationCheck  SiteVisitCheck?
+
+  case         ValuationCase     @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  category     DocumentCategory  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  uploadedBy   User              @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+  deletedBy    User?             @relation("DocumentDeleter", fields: [deletedById], references: [id], onDelete: Restrict)
+  supersedes   PropertyDocument? @relation("DocumentVersions", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy PropertyDocument? @relation("DocumentVersions")
+  siteVisit    SiteVisit?        @relation(fields: [siteVisitId], references: [id], onDelete: Restrict)
+
+  @@index([caseId, categoryId])
+  @@index([scanStatus])
+  @@index([siteVisitId])
+  @@map("property_documents")
+}
+
+/// A visit is a check-in: the server stamps visitedAt, and the phone's GPS
+/// position is judged against the property's location when it is recorded.
+/// The radius and accuracy limit in force at that moment are stored with the
+/// verdict, so a later change to the configuration does not re-judge it.
+model SiteVisit {
+  id                String         @id @default(uuid()) @db.Uuid
+  caseId            String         @db.Uuid
+  visitedById       String         @db.Uuid
+  visitedAt         DateTime       @db.Timestamptz(6)
+  latitude          Decimal?       @db.Decimal(10, 7)
+  longitude         Decimal?       @db.Decimal(10, 7)
+  accuracyMeters    Decimal?       @db.Decimal(10, 2)
+  distanceMeters    Decimal?       @db.Decimal(12, 2)
+  radiusMeters      Int?
+  maxAccuracyMeters Int?
+  locationCheck     SiteVisitCheck @default(NO_LOCATION)
+  accessGained      Boolean        @default(true)
+  findings          String?
+  remarks           String?
+  createdAt         DateTime       @default(now()) @db.Timestamptz(6)
+
+  case      ValuationCase      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  visitedBy User               @relation(fields: [visitedById], references: [id], onDelete: Restrict)
+  photos    PropertyDocument[]
+
+  @@index([caseId])
+  @@map("site_visits")
+}
+
+// ===========================================================================
+// VALUATION
+// ===========================================================================
+
+/// Versioned per case (section 29). A partial unique index in the migration
+/// guarantees exactly one current version, and a trigger rejects UPDATE on a
+/// frozen (approved) version - correction produces a new version instead.
+model Valuation {
+  id      String @id @default(uuid()) @db.Uuid
+  caseId  String @db.Uuid
+  version Int
+
+  status     ValuationStatus @default(DRAFT)
+  isCurrent  Boolean         @default(true)
+  discipline Discipline
+
+  preparedById String? @db.Uuid
+  checkedById  String? @db.Uuid
+
+  marketValue     Decimal? @db.Decimal(20, 2)
+  forcedSaleValue Decimal? @db.Decimal(20, 2)
+  currency        String   @default("ETB") @db.Char(3)
+
+  /// Identifies the code path that produced the figures. Together with
+  /// parameterSetId this is what allows an old valuation to be recomputed.
+  formulaVersion String
+  parameterSetId String? @db.Uuid
+
+  valuationDate  DateTime? @db.Date
+  remarks        String?
+  checkerRemarks String?
+
+  frozenAt  DateTime? @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+
+  case         ValuationCase          @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  preparedBy   User?                  @relation("ValuationPreparer", fields: [preparedById], references: [id], onDelete: Restrict)
+  checkedBy    User?                  @relation("ValuationChecker", fields: [checkedById], references: [id], onDelete: Restrict)
+  parameterSet ValuationParameterSet? @relation(fields: [parameterSetId], references: [id], onDelete: Restrict)
+
+  costApproach       CostApproach?
+  salesApproach      SalesApproach?
+  reconciliation     Reconciliation?
+  forcedSale         ForcedSaleValuation?
+  mechMarketApproach MechMarketApproach?
+  mechCostApproach   MechCostApproach?
+  calculationRuns    CalculationRun[]
+  reports            Report[]
+
+  @@unique([caseId, version])
+  @@index([caseId, isCurrent])
+  @@map("valuations")
+}
+
+model CostApproach {
+  id          String @id @default(uuid()) @db.Uuid
+  valuationId String @unique @db.Uuid
+
+  landValue               Decimal? @db.Decimal(20, 2)
+  buildingReplacementCost Decimal? @db.Decimal(20, 2)
+  totalDepreciation       Decimal? @db.Decimal(20, 2)
+  adjustments             Decimal? @db.Decimal(20, 2)
+  /// The configurable factor referred to as "MCF" in the source. Its exact
+  /// definition is open question 3.1 and must be confirmed by PVD.
+  factor                  Decimal? @db.Decimal(12, 6)
+  indicatedValue          Decimal? @db.Decimal(20, 2)
+  notes                   String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  valuation     Valuation      @relation(fields: [valuationId], references: [id], onDelete: Cascade)
+  lineItems     CostLineItem[]
+  depreciations Depreciation[]
+
+  @@map("cost_approaches")
+}
+
+/// One row per costed element. Each stores its own formula text and computed
+/// amount so the report can show input, formula, rate, quantity, amount,
+/// adjustment and final value exactly as section 9 requires.
+model CostLineItem {
+  id             String  @id @default(uuid()) @db.Uuid
+  costApproachId String  @db.Uuid
+  buildingId     String? @db.Uuid
+
+  sequence       Int
+  description    String
+  unit           String?
+  quantity       Decimal @db.Decimal(18, 4)
+  rate           Decimal @db.Decimal(20, 4)
+  formula        String
+  amount         Decimal @db.Decimal(20, 2)
+  adjustment     Decimal @default(0) @db.Decimal(20, 2)
+  adjustedAmount Decimal @db.Decimal(20, 2)
+  notes          String?
+
+  costApproach CostApproach @relation(fields: [costApproachId], references: [id], onDelete: Cascade)
+
+  @@unique([costApproachId, sequence])
+  @@map("cost_line_items")
+}
+
+model Depreciation {
+  id             String  @id @default(uuid()) @db.Uuid
+  costApproachId String  @db.Uuid
+  buildingId     String? @db.Uuid
+
+  method            DepreciationMethod
+  effectiveAgeYears Decimal            @db.Decimal(8, 2)
+  economicLifeYears Decimal            @db.Decimal(8, 2)
+  residualPercent   Decimal            @default(0) @db.Decimal(5, 2)
+  ratePercent       Decimal            @db.Decimal(7, 4)
+  baseAmount        Decimal            @db.Decimal(20, 2)
+  amount            Decimal            @db.Decimal(20, 2)
+  formula           String
+  notes             String?
+
+  costApproach CostApproach @relation(fields: [costApproachId], references: [id], onDelete: Cascade)
+
+  @@index([costApproachId])
+  @@map("depreciations")
+}
+
+model SalesApproach {
+  id          String @id @default(uuid()) @db.Uuid
+  valuationId String @unique @db.Uuid
+
+  indicatedValue Decimal? @db.Decimal(20, 2)
+  methodNotes    String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  valuation   Valuation            @relation(fields: [valuationId], references: [id], onDelete: Cascade)
+  comparables ComparableProperty[]
+
+  @@map("sales_approaches")
+}
+
+model ComparableProperty {
+  id              String @id @default(uuid()) @db.Uuid
+  salesApproachId String @db.Uuid
+
+  sequence             Int
+  reference            String?
+  location             String
+  characteristics      String?
+  saleDate             DateTime? @db.Date
+  salePrice            Decimal   @db.Decimal(20, 2)
+  area                 Decimal   @db.Decimal(18, 4)
+  unitPrice            Decimal   @db.Decimal(20, 4)
+  /// Named percentage adjustments, e.g. { "location": -5, "time": 2 }.
+  adjustments          Json?
+  netAdjustmentPercent Decimal   @default(0) @db.Decimal(7, 4)
+  adjustedUnitPrice    Decimal   @db.Decimal(20, 4)
+  adjustedValue        Decimal   @db.Decimal(20, 2)
+  notes                String?
+
+  salesApproach SalesApproach @relation(fields: [salesApproachId], references: [id], onDelete: Cascade)
+
+  @@unique([salesApproachId, sequence])
+  @@map("comparable_properties")
+}
+
+/// costWeight + salesWeight must equal 100; enforced by a check constraint in
+/// the migration as well as in the domain layer (section 11).
+model Reconciliation {
+  id          String @id @default(uuid()) @db.Uuid
+  valuationId String @unique @db.Uuid
+
+  costValue       Decimal? @db.Decimal(20, 2)
+  salesValue      Decimal? @db.Decimal(20, 2)
+  costWeight      Decimal  @db.Decimal(5, 2)
+  salesWeight     Decimal  @db.Decimal(5, 2)
+  reconciledValue Decimal  @db.Decimal(20, 2)
+  formula         String
+  rationale       String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  valuation Valuation @relation(fields: [valuationId], references: [id], onDelete: Cascade)
+
+  @@map("reconciliations")
+}
+
+model ForcedSaleValuation {
+  id          String @id @default(uuid()) @db.Uuid
+  valuationId String @unique @db.Uuid
+
+  marketValue       Decimal @db.Decimal(20, 2)
+  forcedSalePercent Decimal @db.Decimal(5, 2)
+  forcedSaleValue   Decimal @db.Decimal(20, 2)
+  formula           String
+  assumptions       String?
+  remarks           String?
+  /// Set when the Maker overrides the configured default percentage; the
+  /// override is meaningless without a justification, so both are captured.
+  isOverridden      Boolean @default(false)
+  overrideReason    String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  valuation Valuation @relation(fields: [valuationId], references: [id], onDelete: Cascade)
+
+  @@map("forced_sale_valuations")
+}
+
+model MechMarketApproach {
+  id          String @id @default(uuid()) @db.Uuid
+  valuationId String @unique @db.Uuid
+
+  indicatedValue Decimal? @db.Decimal(20, 2)
+  notes          String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  valuation   Valuation             @relation(fields: [valuationId], references: [id], onDelete: Cascade)
+  comparables ComparableEquipment[]
+
+  @@map("mech_market_approaches")
+}
+
+model ComparableEquipment {
+  id                   String @id @default(uuid()) @db.Uuid
+  mechMarketApproachId String @db.Uuid
+
+  sequence             Int
+  description          String
+  source               String?
+  marketPrice          Decimal @db.Decimal(20, 2)
+  conditionAdjustment  Decimal @default(0) @db.Decimal(7, 4)
+  ageAdjustment        Decimal @default(0) @db.Decimal(7, 4)
+  locationAdjustment   Decimal @default(0) @db.Decimal(7, 4)
+  otherAdjustment      Decimal @default(0) @db.Decimal(7, 4)
+  netAdjustmentPercent Decimal @default(0) @db.Decimal(7, 4)
+  adjustedValue        Decimal @db.Decimal(20, 2)
+  notes                String?
+
+  approach MechMarketApproach @relation(fields: [mechMarketApproachId], references: [id], onDelete: Cascade)
+
+  @@unique([mechMarketApproachId, sequence])
+  @@map("comparable_equipment")
+}
+
+model MechCostApproach {
+  id          String @id @default(uuid()) @db.Uuid
+  valuationId String @unique @db.Uuid
+
+  originalCost           Decimal? @db.Decimal(20, 2)
+  cifValue               Decimal? @db.Decimal(20, 2)
+  /// Duty, freight and installation loadings applied to a CIF-derived cost
+  /// (assumption 3.7). Percentages, not amounts, so the basis stays visible.
+  loadings               Json?
+  currentReplacementCost Decimal? @db.Decimal(20, 2)
+  depreciationPercent    Decimal? @db.Decimal(7, 4)
+  depreciationAmount     Decimal? @db.Decimal(20, 2)
+  conditionAdjustment    Decimal? @db.Decimal(20, 2)
+  remainingLifeYears     Decimal? @db.Decimal(6, 2)
+  indicatedValue         Decimal? @db.Decimal(20, 2)
+  formula                String?
+  notes                  String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  valuation Valuation @relation(fields: [valuationId], references: [id], onDelete: Cascade)
+
+  @@map("mech_cost_approaches")
+}
+
+/// Append-only reproducibility record (section 28). Holds the complete input
+/// vector, the parameter snapshot and the output, so any historical valuation
+/// can be recomputed and compared byte for byte during an audit.
+model CalculationRun {
+  id                String   @id @default(uuid()) @db.Uuid
+  valuationId       String   @db.Uuid
+  engine            String
+  formulaVersion    String
+  parameterSnapshot Json
+  inputSnapshot     Json
+  outputSnapshot    Json
+  inputHash         String
+  performedById     String   @db.Uuid
+  performedAt       DateTime @default(now()) @db.Timestamptz(6)
+
+  valuation   Valuation @relation(fields: [valuationId], references: [id], onDelete: Restrict)
+  performedBy User      @relation(fields: [performedById], references: [id], onDelete: Restrict)
+
+  @@index([valuationId, performedAt])
+  @@map("calculation_runs")
+}
+
+// ===========================================================================
+// WORKFLOW, APPROVAL, SIGNATURE
+// ===========================================================================
+
+model WorkflowTask {
+  id            String    @id @default(uuid()) @db.Uuid
+  caseId        String    @db.Uuid
+  taskType      TaskType
+  assigneeId    String?   @db.Uuid
+  roleCode      String?
+  dueAt         DateTime? @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  completedAt   DateTime? @db.Timestamptz(6)
+  completedById String?   @db.Uuid
+
+  case     ValuationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  assignee User?         @relation(fields: [assigneeId], references: [id], onDelete: Restrict)
+
+  @@index([assigneeId, completedAt])
+  @@index([caseId, taskType, completedAt])
+  @@index([dueAt])
+  @@map("workflow_tasks")
+}
+
+model WorkflowHistory {
+  id              String      @id @default(uuid()) @db.Uuid
+  caseId          String      @db.Uuid
+  fromStatus      CaseStatus?
+  toStatus        CaseStatus
+  action          String
+  actorId         String      @db.Uuid
+  actorRole       String
+  comment         String?
+  /// Seconds spent in fromStatus - precomputed so the timeline does not have
+  /// to derive durations at render time across thousands of rows.
+  durationSeconds Int?
+  correlationId   String?
+  occurredAt      DateTime    @default(now()) @db.Timestamptz(6)
+
+  case  ValuationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  actor User          @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([caseId, occurredAt])
+  @@map("workflow_history")
+}
+
+/// A return is never a bare status change (section 33). Each return opens a
+/// cycle that closes on resubmission, preserving the full rework history.
+model CorrectionCycle {
+  id              String     @id @default(uuid()) @db.Uuid
+  caseId          String     @db.Uuid
+  sequence        Int
+  returnedById    String     @db.Uuid
+  returnedByRole  String
+  returnedAt      DateTime   @default(now()) @db.Timestamptz(6)
+  previousStatus  CaseStatus
+  reasonCode      String
+  comment         String
+  flaggedSections Json?
+
+  resolvedAt     DateTime? @db.Timestamptz(6)
+  resolutionNote String?
+  reworkSeconds  Int?
+
+  case       ValuationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  returnedBy User          @relation("CorrectionReturner", fields: [returnedById], references: [id], onDelete: Restrict)
+
+  @@unique([caseId, sequence])
+  @@index([caseId, resolvedAt])
+  @@map("correction_cycles")
+}
+
+model Comment {
+  id         String    @id @default(uuid()) @db.Uuid
+  caseId     String    @db.Uuid
+  authorId   String    @db.Uuid
+  parentId   String?   @db.Uuid
+  section    String?
+  body       String
+  isResolved Boolean   @default(false)
+  resolvedAt DateTime? @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(6)
+
+  case    ValuationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  author  User          @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  parent  Comment?      @relation("CommentThread", fields: [parentId], references: [id], onDelete: Restrict)
+  replies Comment[]     @relation("CommentThread")
+
+  @@index([caseId, createdAt])
+  @@map("comments")
+}
+
+/// valueAtDecision freezes the figure the approver actually saw. A later
+/// revaluation must never retroactively change what was approved.
+model Approval {
+  id              String           @id @default(uuid()) @db.Uuid
+  caseId          String           @db.Uuid
+  level           ApprovalLevel
+  chainPosition   Int
+  approverId      String           @db.Uuid
+  decision        ApprovalDecision
+  comment         String?
+  valueAtDecision Decimal          @db.Decimal(20, 2)
+  decidedAt       DateTime         @default(now()) @db.Timestamptz(6)
+
+  case     ValuationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  approver User          @relation(fields: [approverId], references: [id], onDelete: Restrict)
+
+  @@index([caseId, chainPosition])
+  @@map("approvals")
+}
+
+model DigitalSignature {
+  id             String          @id @default(uuid()) @db.Uuid
+  caseId         String          @db.Uuid
+  reportId       String?         @db.Uuid
+  signerId       String          @db.Uuid
+  signerRole     String
+  documentSha256 String
+  signature      String
+  provider       String
+  certificateRef String?
+  status         SignatureStatus @default(VALID)
+  signedAt       DateTime        @default(now()) @db.Timestamptz(6)
+  revokedAt      DateTime?       @db.Timestamptz(6)
+  revokeReason   String?
+
+  case   ValuationCase @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  report Report?       @relation(fields: [reportId], references: [id], onDelete: Restrict)
+  signer User          @relation(fields: [signerId], references: [id], onDelete: Restrict)
+
+  @@index([caseId])
+  @@index([documentSha256])
+  @@map("digital_signatures")
+}
+
+model Report {
+  id          String     @id @default(uuid()) @db.Uuid
+  caseId      String     @db.Uuid
+  valuationId String?    @db.Uuid
+  templateId  String?    @db.Uuid
+  type        ReportType
+  version     Int
+
+  /// The frozen data the report was rendered from. Re-rendering uses this,
+  /// not today's case data, so an old report reproduces exactly (section 29).
+  dataSnapshot Json
+  storageKey   String?
+  sha256       String?
+  isImmutable  Boolean @default(false)
+
+  generatedById String   @db.Uuid
+  generatedAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  case        ValuationCase      @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  valuation   Valuation?         @relation(fields: [valuationId], references: [id], onDelete: Restrict)
+  template    ReportTemplate?    @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  generatedBy User               @relation(fields: [generatedById], references: [id], onDelete: Restrict)
+  signatures  DigitalSignature[]
+
+  @@unique([caseId, type, version])
+  @@index([caseId])
+  @@map("reports")
+}
+
+// ===========================================================================
+// SLA, NOTIFICATION, AUDIT
+// ===========================================================================
+
+model SlaRecord {
+  id       String @id @default(uuid()) @db.Uuid
+  caseId   String @unique @db.Uuid
+  policyId String @db.Uuid
+
+  startedAt          DateTime  @db.Timestamptz(6)
+  dueAt              DateTime  @db.Timestamptz(6)
+  completedAt        DateTime? @db.Timestamptz(6)
+  /// Gross elapsed includes pauses; net excludes them. Both are reported so a
+  /// pause cannot quietly flatter the department's KPI.
+  elapsedWorkingDays Decimal   @default(0) @db.Decimal(8, 2)
+  netWorkingDays     Decimal   @default(0) @db.Decimal(8, 2)
+  pausedSeconds      Int       @default(0)
+  status             SlaStatus @default(GREEN)
+  breachedAt         DateTime? @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @db.Timestamptz(6)
+
+  case   ValuationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  policy SlaPolicy     @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  pauses SlaPause[]
+
+  @@index([status, dueAt])
+  @@map("sla_records")
+}
+
+model SlaPause {
+  id          String    @id @default(uuid()) @db.Uuid
+  slaRecordId String    @db.Uuid
+  reason      String
+  pausedAt    DateTime  @db.Timestamptz(6)
+  resumedAt   DateTime? @db.Timestamptz(6)
+
+  slaRecord SlaRecord @relation(fields: [slaRecordId], references: [id], onDelete: Cascade)
+
+  @@index([slaRecordId])
+  @@map("sla_pauses")
+}
+
+model Notification {
+  id          String              @id @default(uuid()) @db.Uuid
+  recipientId String              @db.Uuid
+  caseId      String?             @db.Uuid
+  eventType   String
+  channel     NotificationChannel
+  subject     String
+  body        String
+  payload     Json?
+  status      NotificationStatus  @default(PENDING)
+  attempts    Int                 @default(0)
+  lastError   String?
+  sentAt      DateTime?           @db.Timestamptz(6)
+  readAt      DateTime?           @db.Timestamptz(6)
+  createdAt   DateTime            @default(now()) @db.Timestamptz(6)
+
+  recipient User           @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  case      ValuationCase? @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, readAt])
+  @@index([status, createdAt])
+  @@index([recipientId, createdAt])
+  @@map("notifications")
+}
+
+/// Append-only. A trigger in the migration rejects UPDATE and DELETE, so the
+/// audit trail survives an application bug as well as a malicious caller.
+model AuditLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  actorId       String?  @db.Uuid
+  actorRole     String?
+  action        String
+  entity        String
+  entityId      String?
+  before        Json?
+  after         Json?
+  ipAddress     String?
+  userAgent     String?
+  correlationId String?
+  occurredAt    DateTime @default(now()) @db.Timestamptz(6)
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([entity, entityId, occurredAt])
+  @@index([actorId, occurredAt])
+  @@index([action, occurredAt])
+  @@index([correlationId])
+  @@index([occurredAt])
+  @@map("audit_logs")
+}

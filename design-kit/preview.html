@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NIB Design Kit</title>
+
+    <!-- The kit: tokens first, then the components that read them. -->
+    <link rel="stylesheet" href="nib-tokens.css" />
+    <link rel="stylesheet" href="nib-components.css" />
+
+    <script>
+      // Theme before first paint, so a dark-mode user never sees a light flash.
+      // Order: ?theme=dark|light in the URL, then the saved choice, then the OS.
+      (function () {
+        var root = document.documentElement;
+        var param = new URLSearchParams(location.search).get('theme');
+        var saved = null;
+        try {
+          saved = localStorage.getItem('nib-theme');
+        } catch (e) {}
+        var theme =
+          param ||
+          saved ||
+          (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        root.classList.toggle('dark', theme === 'dark');
+
+        window.nibToggleTheme = function () {
+          var dark = root.classList.toggle('dark');
+          try {
+            localStorage.setItem('nib-theme', dark ? 'dark' : 'light');
+          } catch (e) {}
+        };
+      })();
+    </script>
+
+    <!-- Layout for this demo page only; not part of the kit. -->
+    <style>
+      .demo-grid {
+        display: grid;
+        gap: 1.5rem;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+      }
+      .demo-heading {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+      .demo-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.625rem;
+      }
+      .demo-row + .demo-row {
+        margin-top: 1.25rem;
+      }
+      .demo-field {
+        margin-bottom: 1rem;
+      }
+      .demo-when-dark,
+      .dark .demo-when-light {
+        display: none;
+      }
+      .dark .demo-when-dark {
+        display: block;
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- Icon sprite (Lucide icons, ISC licence). Use any icon set you like. -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="i-dashboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" />
+        </symbol>
+        <symbol id="i-tasks" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m3 17 2 2 4-4" /><path d="m3 7 2 2 4-4" /><path d="M13 6h8" /><path d="M13 12h8" /><path d="M13 18h8" />
+        </symbol>
+        <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M16 13H8" /><path d="M16 17H8" />
+        </symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12h14" /><path d="M12 5v14" />
+        </symbol>
+        <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 3v18h18" /><path d="M18 17V9" /><path d="M13 17V5" /><path d="M8 17v-3" />
+        </symbol>
+        <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </symbol>
+        <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /><path d="m9 12 2 2 4-4" />
+        </symbol>
+        <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+        </symbol>
+        <symbol id="i-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m15 18-6-6 6-6" />
+        </symbol>
+        <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+        </symbol>
+        <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" />
+        </symbol>
+        <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 12h16" /><path d="M4 6h16" /><path d="M4 18h16" />
+        </symbol>
+        <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+        </symbol>
+        <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+        </symbol>
+        <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
+        </symbol>
+        <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><path d="m9 11 3 3L22 4" />
+        </symbol>
+        <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><path d="M12 9v4" /><path d="M12 17h.01" />
+        </symbol>
+        <symbol id="i-arrow-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m5 12 7-7 7 7" /><path d="M12 19V5" />
+        </symbol>
+        <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" /><path d="M12 15V3" />
+        </symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+        </symbol>
+      </defs>
+    </svg>
+
+    <div class="nib-shell">
+      <!-- ============================== SIDEBAR ============================== -->
+      <!-- A fixed rail from 1024px up (collapsible to icons); a drawer below. -->
+      <aside class="nib-sidebar" id="nib-rail">
+        <div class="nib-rail-relief" aria-hidden="true"></div>
+
+        <div class="nib-sidebar__brand">
+          <div class="nib-logo">
+            <img src="nib-logo.png" alt="NIB International Bank" />
+            <div class="nib-logo__text">
+              <div class="nib-logo__name">NIB INTERNATIONAL BANK S.C.</div>
+              <div class="nib-logo__system">Your system name</div>
+            </div>
+          </div>
+          <button class="nib-sidebar__close" type="button" aria-label="Close navigation">
+            <svg aria-hidden="true"><use href="#i-x" /></svg>
+          </button>
+        </div>
+
+        <button class="nib-sidebar-toggle" type="button" aria-pressed="false" aria-label="Collapse navigation" title="Collapse navigation">
+          <svg aria-hidden="true"><use href="#i-chevron-left" /></svg>
+        </button>
+
+        <nav class="nib-nav" aria-label="Main">
+          <div>
+            <h2 class="nib-nav__title">Overview</h2>
+            <a class="nib-nav__item" href="#" aria-current="page">
+              <svg class="nib-nav__icon" aria-hidden="true"><use href="#i-dashboard" /></svg>
+              <span class="nib-nav__label">Dashboard</span>
+            </a>
+            <a class="nib-nav__item" href="#">
+              <svg class="nib-nav__icon" aria-hidden="true"><use href="#i-tasks" /></svg>
+              <span class="nib-nav__label">My Tasks</span>
+              <span class="nib-nav__count">4</span>
+            </a>
+          </div>
+          <div>
+            <h2 class="nib-nav__title">Work</h2>
+            <a class="nib-nav__item" href="#">
+              <svg class="nib-nav__icon" aria-hidden="true"><use href="#i-file" /></svg>
+              <span class="nib-nav__label">Requests</span>
+            </a>
+            <a class="nib-nav__item" href="#">
+              <svg class="nib-nav__icon" aria-hidden="true"><use href="#i-plus" /></svg>
+              <span class="nib-nav__label">New Request</span>
+            </a>
+            <a class="nib-nav__item" href="#">
+              <svg class="nib-nav__icon" aria-hidden="true"><use href="#i-chart" /></svg>
+              <span class="nib-nav__label">Reports</span>
+            </a>
+          </div>
+          <div>
+            <h2 class="nib-nav__title">Administration</h2>
+            <a class="nib-nav__item" href="#">
+              <svg class="nib-nav__icon" aria-hidden="true"><use href="#i-users" /></svg>
+              <span class="nib-nav__label">Users</span>
+            </a>
+            <a class="nib-nav__item" href="#">
+              <svg class="nib-nav__icon" aria-hidden="true"><use href="#i-shield" /></svg>
+              <span class="nib-nav__label">Roles</span>
+            </a>
+          </div>
+        </nav>
+      </aside>
+
+      <script>
+        // Sidebar collapse (desktop): toggles .is-collapsed on the rail and
+        // remembers the choice. ?sidebar=collapsed|expanded in the URL
+        // overrides it. Runs straight after the rail so it never paints wide
+        // and then snaps narrow.
+        (function () {
+          var rail = document.getElementById('nib-rail');
+          var toggle = rail.querySelector('.nib-sidebar-toggle');
+
+          function apply(collapsed) {
+            rail.classList.toggle('is-collapsed', collapsed);
+            var label = collapsed ? 'Expand navigation' : 'Collapse navigation';
+            toggle.setAttribute('aria-pressed', String(collapsed));
+            toggle.setAttribute('aria-label', label);
+            toggle.title = label;
+            // With the labels hidden, a hover tooltip names each link.
+            rail.querySelectorAll('.nib-nav__item').forEach(function (link) {
+              var text = link.querySelector('.nib-nav__label');
+              if (collapsed && text) link.title = text.textContent;
+              else link.removeAttribute('title');
+            });
+          }
+
+          var collapsed = false;
+          try {
+            collapsed = localStorage.getItem('nib-sidebar-collapsed') === '1';
+          } catch (e) {}
+          var param = new URLSearchParams(location.search).get('sidebar');
+          if (param) collapsed = param === 'collapsed';
+          apply(collapsed);
+
+          toggle.addEventListener('click', function () {
+            var next = !rail.classList.contains('is-collapsed');
+            apply(next);
+            try {
+              localStorage.setItem('nib-sidebar-collapsed', next ? '1' : '0');
+            } catch (e) {}
+          });
+        })();
+      </script>
+
+      <!-- The drawer's backdrop. Must follow the <aside> as its sibling. -->
+      <div class="nib-scrim" aria-hidden="true"></div>
+
+      <!-- ============================== CONTENT ============================== -->
+      <div class="nib-column">
+        <div class="nib-ground-relief" aria-hidden="true">
+          <div class="nib-ground-relief__a"></div>
+          <div class="nib-ground-relief__b"></div>
+        </div>
+
+        <div class="nib-header-band">
+          <header class="nib-header">
+            <button class="nib-header-btn nib-menu-button" type="button" aria-controls="nib-rail" aria-expanded="false" aria-label="Open navigation">
+              <svg aria-hidden="true"><use href="#i-menu" /></svg>
+            </button>
+
+            <form class="nib-header-search" role="search" onsubmit="return false">
+              <svg aria-hidden="true"><use href="#i-search" /></svg>
+              <input type="search" name="search" placeholder="Search requests, customers..." aria-label="Search" />
+              <kbd>⌘K</kbd>
+            </form>
+
+            <div class="nib-header__actions">
+              <button class="nib-header-btn" type="button" onclick="nibToggleTheme()" aria-label="Switch theme" title="Switch theme">
+                <svg class="demo-when-light" aria-hidden="true"><use href="#i-moon" /></svg>
+                <svg class="demo-when-dark" aria-hidden="true"><use href="#i-sun" /></svg>
+              </button>
+              <button class="nib-header-btn" type="button" aria-label="3 notifications">
+                <svg aria-hidden="true"><use href="#i-bell" /></svg>
+                <span class="nib-header-btn__count">3</span>
+              </button>
+              <button class="nib-avatar" type="button" aria-label="Account menu for Abebe Kebede" title="Abebe Kebede">AK</button>
+            </div>
+          </header>
+        </div>
+
+        <main class="nib-main">
+          <div class="nib-page nib-stack">
+            <!-- Page hero: the page's only H1. -->
+            <header class="nib-hero">
+              <div class="nib-hero__text">
+                <p class="nib-hero__eyebrow">Overview</p>
+                <h1 class="nib-page-title">Dashboard</h1>
+                <p class="nib-hero__subtitle">
+                  Valuation requests across every branch, with the cases that need action first.
+                </p>
+              </div>
+              <div class="nib-hero__actions">
+                <button class="nib-btn nib-btn--outline" type="button">
+                  <svg aria-hidden="true"><use href="#i-download" /></svg> Export
+                </button>
+                <button class="nib-btn" type="button">
+                  <svg aria-hidden="true"><use href="#i-plus" /></svg> New request
+                </button>
+              </div>
+            </header>
+
+            <!-- Stat tiles -->
+            <div class="nib-stat-grid">
+              <a class="nib-card nib-card--interactive nib-stat nib-stat--brand" href="#">
+                <span class="nib-stat__icon" aria-hidden="true"><svg><use href="#i-file" /></svg></span>
+                <p class="nib-stat__label">Open requests</p>
+                <p class="nib-stat__value">128</p>
+                <p class="nib-stat__meta">12 opened this week</p>
+              </a>
+              <div class="nib-card nib-stat nib-stat--warning">
+                <span class="nib-stat__icon" aria-hidden="true"><svg><use href="#i-clock" /></svg></span>
+                <p class="nib-stat__label">Awaiting approval</p>
+                <p class="nib-stat__value">23</p>
+                <p class="nib-stat__meta">5 due today</p>
+              </div>
+              <div class="nib-card nib-stat nib-stat--good">
+                <span class="nib-stat__icon" aria-hidden="true"><svg><use href="#i-check" /></svg></span>
+                <p class="nib-stat__label">Completed</p>
+                <p class="nib-stat__value">1,042<span class="nib-stat__unit">cases</span></p>
+                <p class="nib-delta nib-delta--good">
+                  <svg aria-hidden="true"><use href="#i-arrow-up" /></svg> 8% on last quarter
+                </p>
+                <p class="nib-stat__meta">This quarter</p>
+              </div>
+              <div class="nib-card nib-stat nib-stat--danger">
+                <span class="nib-stat__icon" aria-hidden="true"><svg><use href="#i-alert" /></svg></span>
+                <p class="nib-stat__label">Overdue</p>
+                <p class="nib-stat__value">7</p>
+                <p class="nib-stat__meta">Past SLA</p>
+              </div>
+            </div>
+
+            <div class="demo-grid">
+              <!-- Buttons and badges -->
+              <section class="nib-card">
+                <div class="nib-card__bar">
+                  <div class="demo-heading">
+                    <span class="nib-icon-plate" aria-hidden="true"><svg><use href="#i-dashboard" /></svg></span>
+                    <h3 class="nib-card__title">Buttons &amp; status</h3>
+                  </div>
+                </div>
+                <div class="nib-card__body">
+                  <div class="demo-row">
+                    <button class="nib-btn nib-btn--primary" type="button">
+                      <svg aria-hidden="true"><use href="#i-plus" /></svg> Primary
+                    </button>
+                    <button class="nib-btn nib-btn--accent" type="button">Accent</button>
+                    <button class="nib-btn nib-btn--outline" type="button">Outline</button>
+                    <button class="nib-btn nib-btn--secondary" type="button">Secondary</button>
+                    <button class="nib-btn nib-btn--ghost" type="button">Ghost</button>
+                    <button class="nib-btn nib-btn--link" type="button">Link</button>
+                  </div>
+                  <div class="demo-row">
+                    <button class="nib-btn nib-btn--soft-danger" type="button">Withdraw</button>
+                    <button class="nib-btn nib-btn--danger" type="button">Delete</button>
+                    <button class="nib-btn nib-btn--outline nib-btn--icon" type="button" aria-label="Delete">
+                      <svg aria-hidden="true"><use href="#i-trash" /></svg>
+                    </button>
+                    <button class="nib-btn nib-btn--sm" type="button">Small</button>
+                    <button class="nib-btn nib-btn--outline nib-btn--sm" type="button">Small</button>
+                  </div>
+                  <div class="demo-row">
+                    <span class="nib-badge">Draft</span>
+                    <span class="nib-badge nib-badge--inactive">Inactive</span>
+                    <span class="nib-badge nib-badge--info">Submitted</span>
+                    <span class="nib-badge nib-badge--active">In progress</span>
+                    <span class="nib-badge nib-badge--waiting">Waiting</span>
+                    <span class="nib-badge nib-badge--warning">In review</span>
+                    <span class="nib-badge nib-badge--success">Approved</span>
+                    <span class="nib-badge nib-badge--danger">Overdue</span>
+                    <span class="nib-badge nib-badge--brand">NIB</span>
+                  </div>
+                </div>
+              </section>
+
+              <!-- Form -->
+              <section class="nib-card">
+                <div class="nib-card__bar">
+                  <div class="demo-heading">
+                    <span class="nib-icon-plate nib-icon-plate--info" aria-hidden="true"><svg><use href="#i-file" /></svg></span>
+                    <h3 class="nib-card__title">Form fields</h3>
+                  </div>
+                </div>
+                <div class="nib-card__body">
+                  <div class="demo-field">
+                    <label class="nib-label" for="f-name">Customer name</label>
+                    <input class="nib-input" id="f-name" placeholder="e.g. Abebe Kebede" />
+                  </div>
+                  <div class="demo-field">
+                    <label class="nib-label" for="f-branch">Branch</label>
+                    <select class="nib-select" id="f-branch">
+                      <option>Head Office</option>
+                      <option>Bole</option>
+                    </select>
+                    <p class="nib-hint">The branch that receives the valuation report.</p>
+                  </div>
+                  <div class="demo-row">
+                    <button class="nib-btn" type="button">Save</button>
+                    <button class="nib-btn nib-btn--outline" type="button">Cancel</button>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <!-- Table -->
+            <div class="nib-table-wrap">
+              <div class="nib-table-bar">
+                <h2 class="nib-table-title">Recent requests</h2>
+                <span class="nib-badge">3 items</span>
+              </div>
+              <div class="nib-table-scroll">
+                <table class="nib-table">
+                  <thead>
+                    <tr>
+                      <th>Reference</th>
+                      <th>Customer</th>
+                      <th>Status</th>
+                      <th style="text-align: right">Amount (ETB)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="nib-tabular">VR-2026-0142</td>
+                      <td>Abebe Kebede</td>
+                      <td><span class="nib-badge nib-badge--warning">In review</span></td>
+                      <td class="nib-num">4,250,000.00</td>
+                    </tr>
+                    <tr>
+                      <td class="nib-tabular">VR-2026-0141</td>
+                      <td>Selam Trading PLC</td>
+                      <td><span class="nib-badge nib-badge--success">Approved</span></td>
+                      <td class="nib-num">12,800,000.00</td>
+                    </tr>
+                    <tr>
+                      <td class="nib-tabular">VR-2026-0139</td>
+                      <td>Hana Tesfaye</td>
+                      <td><span class="nib-badge nib-badge--danger">Overdue</span></td>
+                      <td class="nib-num">980,500.00</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <script>
+      // Navigation drawer (below 1024px): the header's menu button opens the
+      // rail over the page; the close button, the scrim, Escape and choosing a
+      // link close it. Focus moves into the drawer and back to the menu button.
+      // ?drawer=open in the URL opens it on load.
+      (function () {
+        var rail = document.getElementById('nib-rail');
+        var scrim = document.querySelector('.nib-scrim');
+        var opener = document.querySelector('.nib-menu-button');
+        var closer = rail.querySelector('.nib-sidebar__close');
+
+        function setOpen(open, returnFocus) {
+          rail.classList.toggle('is-open', open);
+          opener.setAttribute('aria-expanded', String(open));
+          // Announced as a dialog only while it is one.
+          if (open) {
+            rail.setAttribute('role', 'dialog');
+            rail.setAttribute('aria-modal', 'true');
+            rail.setAttribute('aria-label', 'Main navigation');
+            closer.focus();
+          } else {
+            rail.removeAttribute('role');
+            rail.removeAttribute('aria-modal');
+            rail.removeAttribute('aria-label');
+            if (returnFocus) opener.focus();
+          }
+        }
+
+        opener.addEventListener('click', function () {
+          setOpen(true);
+        });
+        closer.addEventListener('click', function () {
+          setOpen(false, true);
+        });
+        scrim.addEventListener('click', function () {
+          setOpen(false, true);
+        });
+        rail.addEventListener('click', function (event) {
+          if (rail.classList.contains('is-open') && event.target.closest('.nib-nav__item')) {
+            setOpen(false);
+          }
+        });
+        document.addEventListener('keydown', function (event) {
+          if (event.key === 'Escape' && rail.classList.contains('is-open')) setOpen(false, true);
+          // Ctrl+K or Cmd+K jumps to search, as the hint in the field says.
+          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+            event.preventDefault();
+            document.querySelector('.nib-header-search input').focus();
+          }
+        });
+        // Growing past 1024px turns the drawer back into the rail.
+        matchMedia('(min-width: 1024px)').addEventListener('change', function (event) {
+          if (event.matches) setOpen(false);
+        });
+
+        if (new URLSearchParams(location.search).get('drawer') === 'open') setOpen(true);
+      })();
+    </script>
+  </body>
+</html>

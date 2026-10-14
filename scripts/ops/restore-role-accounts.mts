@@ -3,11 +3,12 @@
  *
  *   npx tsx scripts/ops/restore-role-accounts.mts                       new random password
  *   npx tsx scripts/ops/restore-role-accounts.mts --password "Nib@2026"  a password you choose
+ *   ... --include-admin   also give the super administrator that password
  *
  * Reactivates the seeded account for each role (creating the one that no
  * longer exists) and gives them all the same password, which is printed at the
- * end. The super administrator (NIB-ADM-001) is listed but never changed, and
- * no other account is touched.
+ * end. The super administrator (NIB-ADM-001) keeps their password unless
+ * --include-admin is given, and no other account is touched.
  *
  * Unlike `npm run db:seed`, this resets nobody else's password - which is why
  * it exists: never run the seed on a database people are using.
@@ -48,7 +49,10 @@ type Account = {
   };
 };
 
+const includeAdmin = process.argv.includes('--include-admin');
+
 const ACCOUNTS: Account[] = [
+  ...(includeAdmin ? [{ role: 'ADMIN', employeeId: 'NIB-ADM-001' }] : []),
   { role: 'PROCESS_OWNER', employeeId: 'NIB-PO-001' },
   { role: 'MAKER_MANAGER', employeeId: 'NIB-MGR-001' },
   { role: 'MAKER', employeeId: 'NIB-VAL-001' },
@@ -76,7 +80,7 @@ const admin = await prisma.user.findUnique({
   where: { employeeId: 'NIB-ADM-001' },
   select: { email: true, fullName: true, isActive: true },
 });
-if (admin) {
+if (admin && !includeAdmin) {
   rows.push({
     role: 'ADMIN (super admin)',
     name: admin.fullName,

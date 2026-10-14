@@ -39,7 +39,11 @@ export class LocalStorageProvider implements StorageProvider {
   private readonly root: string;
 
   constructor(root?: string) {
-    this.root = path.resolve(root ?? serverEnv.STORAGE_LOCAL_ROOT ?? defaultStorageRoot());
+    // The root is runtime configuration outside the app, so there is nothing to
+    // trace; without the hint Turbopack bundles the whole project into the output.
+    this.root = path.resolve(
+      /*turbopackIgnore: true*/ root ?? serverEnv.STORAGE_LOCAL_ROOT ?? defaultStorageRoot(),
+    );
     assertOutsideApplication(this.root);
   }
 

@@ -93,7 +93,13 @@ if (admin && !includeAdmin) {
 for (const account of ACCOUNTS) {
   const role = await prisma.role.findUniqueOrThrow({ where: { code: account.role } });
 
-  let user = await prisma.user.findUnique({ where: { employeeId: account.employeeId } });
+  // On a freshly seeded database the seed's own account for the role still
+  // holds the demo email, so it is reused rather than duplicated.
+  let user =
+    (await prisma.user.findUnique({ where: { employeeId: account.employeeId } })) ??
+    (account.create
+      ? await prisma.user.findUnique({ where: { email: account.create.email } })
+      : null);
   if (!user) {
     if (!account.create) {
       console.warn(`${account.employeeId} no longer exists; skipped (${account.role}).`);
@@ -154,7 +160,7 @@ for (const account of ACCOUNTS) {
     role: account.role,
     name: user.fullName,
     signIn: user.email,
-    employeeId: account.employeeId,
+    employeeId: user.employeeId,
     password,
   });
 }

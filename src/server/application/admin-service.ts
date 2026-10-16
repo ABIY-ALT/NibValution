@@ -6,7 +6,6 @@ import { invalidateConfigurationCache } from './configuration-service';
 import { assertPermission, type Actor } from '@/server/domain/rbac/authorize';
 import { PERMISSIONS } from '@/server/domain/rbac/permissions';
 import { validateThresholdSet } from '@/server/domain/approval/routing';
-import { GUIDELINE_PREFIX, isGuidelineKey } from '@/server/domain/valuation/civil/guideline';
 import { dec } from '@/lib/money';
 import { BusinessRuleError, ConflictError, NotFoundError, ValidationError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
@@ -885,6 +884,13 @@ export async function updateThresholdChain(
 // ---------------------------------------------------------------------------
 // Valuation parameters
 // ---------------------------------------------------------------------------
+
+/** Keys under this prefix are published with a guideline release, never edited by hand. */
+const GUIDELINE_PREFIX = 'guideline.';
+
+function isGuidelineKey(key: string): boolean {
+  return key.startsWith(GUIDELINE_PREFIX);
+}
 
 export async function listParameterSets(actor: Actor) {
   assertPermission(actor, PERMISSIONS.PARAMETER_UPDATE);

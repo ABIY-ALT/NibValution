@@ -17,9 +17,7 @@ import {
   TableWrap,
 } from '@/components/ui/table';
 import { formatAmount } from '@/lib/money';
-import type { CaseStatus, SiteVisitCheck } from '@/server/domain/shared/enums';
-import { summarizeVisits } from '@/server/domain/site-visit/location-check';
-import { VisitSummaryBadge } from '@/components/valuation/site-visit-check';
+import type { CaseStatus } from '@/server/domain/shared/enums';
 
 export interface CaseRow {
   id: string;
@@ -36,8 +34,6 @@ export interface CaseRow {
   maker: { fullName: string } | null;
   checker: { fullName: string } | null;
   slaRecord: { status: string; dueAt: Date } | null;
-  /** Present when the query loaded them; needed only for the site-visit column. */
-  siteVisits?: { locationCheck: SiteVisitCheck }[];
 }
 
 function formatDate(value: Date | null): string {
@@ -68,7 +64,6 @@ export function CaseTable({
   emptyTitle = 'Nothing to show',
   emptyAction,
   showSla = true,
-  showSiteVisit = false,
   title,
   meta,
 }: {
@@ -77,8 +72,6 @@ export function CaseTable({
   emptyTitle?: string;
   emptyAction?: React.ReactNode;
   showSla?: boolean;
-  /** Adds the site-visit column; the rows must carry their visits. */
-  showSiteVisit?: boolean;
   /** Masthead title. Omitted, the register renders without a masthead. */
   title?: string;
   /** Counts or controls shown at the right of the masthead. */
@@ -102,7 +95,6 @@ export function CaseTable({
               <TH>Owner / applicant</TH>
               <TH>Requesting unit</TH>
               <TH>Maker / checker</TH>
-              {showSiteVisit ? <TH>Site visit</TH> : null}
               <TH>Status</TH>
               <TH className="text-right">Value (ETB)</TH>
               <TH>Raised</TH>
@@ -110,12 +102,7 @@ export function CaseTable({
           </THead>
           <TBody>
             {rows.length === 0 ? (
-              <EmptyRow
-                colSpan={showSiteVisit ? 9 : 8}
-                icon={FileSearch}
-                title={emptyTitle}
-                action={emptyAction}
-              >
+              <EmptyRow colSpan={8} icon={FileSearch} title={emptyTitle} action={emptyAction}>
                 {emptyMessage}
               </EmptyRow>
             ) : (
@@ -144,20 +131,6 @@ export function CaseTable({
                       {row.checker?.fullName ?? '—'}
                     </span>
                   </TD>
-                  {showSiteVisit ? (
-                    <TD>
-                      {/* No valuator yet means no visit is due. */}
-                      {row.maker ? (
-                        <VisitSummaryBadge
-                          summary={summarizeVisits(
-                            (row.siteVisits ?? []).map((v) => v.locationCheck),
-                          )}
-                        />
-                      ) : (
-                        <span className="text-ink-3">—</span>
-                      )}
-                    </TD>
-                  ) : null}
                   <TD>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <StatusBadge status={row.status as CaseStatus} />

@@ -16,7 +16,6 @@ import {
   Landmark,
   Link2,
   MessageSquareText,
-  MessagesSquare,
   Paperclip,
   Phone,
   Route,
@@ -36,19 +35,13 @@ import {
 } from 'lucide-react';
 import { requireActor } from '@/server/application/actor';
 import { actionsFor, getCase, listAssignableValuators } from '@/server/application/case-service';
-import {
-  loadSiteVisitEvidence,
-  loadValuationSummary,
-} from '@/server/application/valuation-service';
-import { SiteVisitCheckBadge } from '@/components/valuation/site-visit-check';
-import { countOpenComments } from '@/server/application/review-service';
+import { loadValuationCard } from '@/server/application/valuation-service';
+import { ValuationFiguresForm } from '@/components/valuation/valuation-figures';
 import { loadApprovalRecord } from '@/server/application/signature-service';
 import { listCaseDocuments } from '@/server/application/case-document-service';
 import { DocumentsCard } from '@/components/reports/documents-card';
 import { ApprovalRecordCard } from '@/components/workflow/approval-record';
 import { REVIEW_SECTION_LABELS, type ReviewSection } from '@/lib/validation/review';
-import { canAccessCase } from '@/server/domain/rbac/authorize';
-import { buttonVariants } from '@/components/ui/button';
 import {
   listDocumentCategories,
   listDocuments,
@@ -119,8 +112,8 @@ const ACTION_PRESENTATION: Record<string, Omit<ActionSpec, 'action'>> = {
     requiresAssignee: true,
     assigneeLabel: 'Assign to Checker',
   },
-  // ADD_CHECKER_COMMENT is deliberately absent: review comments are raised in
-  // the valuation workspace, where each is tagged with the section it concerns.
+  // ADD_CHECKER_COMMENT is deliberately absent: a checker who wants changes
+  // returns the case for correction, with the comment.
   COMPLETE_CHECKING: {
     icon: 'check',
     label: 'Complete checking',
@@ -384,20 +377,13 @@ export default async function CaseDetailPage({
     listDocuments(actor, record.id),
     listDocumentCategories(discipline),
     missingMandatoryCategories(record.id, discipline),
-    loadValuationSummary(actor, record.id),
+    loadValuationCard(actor, record.id),
   ]);
-  const [openComments, approvalRecord, caseDocuments, siteVisits] = await Promise.all([
-    countOpenComments(record.id),
+  const [approvalRecord, caseDocuments] = await Promise.all([
     loadApprovalRecord(actor, record.id),
     listCaseDocuments(actor, record.id),
-    loadSiteVisitEvidence(actor, record.id),
   ]);
-  // The visit to show: the latest one proving presence, else the latest of any kind.
-  const shownVisit = siteVisits?.onSite
-    ? { ...siteVisits.onSite, distanceMeters: null }
-    : (siteVisits?.latest ?? null);
-  const canReadValuation = canAccessCase(actor, record, PERMISSIONS.VALUATION_READ);
-  const canWorkValuation = canAccessCase(actor, record, PERMISSIONS.VALUATION_EDIT);
+  const figures = valuation?.summary ?? null;
 
   const caseIsOpen = !['APPROVED', 'SIGNED', 'COMPLETED', 'ARCHIVED'].includes(record.status);
 
@@ -623,7 +609,7 @@ export default async function CaseDetailPage({
             </CardContent>
           </Card>
 
-          {canReadValuation ? (
+          {valuation ? (
             <Card className="overflow-hidden">
               <CardBar>
                 <CardTitle className="flex items-center gap-3">
@@ -632,83 +618,49 @@ export default async function CaseDetailPage({
                 </CardTitle>
               </CardBar>
               <CardContent className="space-y-4 pt-6">
-                {valuation?.marketValue ? (
+                {figures?.stale ? (
+                  <p className="rounded-(--radius-control) bg-st-review-bg p-3.5 text-[12.5px] text-ink-2">
+                    The property changed after the figures were entered, so they were cleared. Enter
+                    them again before submitting for checking.
+                  </p>
+                ) : null}
+                {valuation.canEnterFigures ? (
+                  <ValuationFiguresForm
+                    caseId={record.id}
+                    defaults={{
+                      ...valuation.figures,
+                      valuationDate:
+                        valuation.figures.valuationDate ?? new Date().toISOString().slice(0, 10),
+                    }}
+                    editable
+                  />
+                ) : figures?.marketValue ? (
                   <div className="space-y-3">
                     <div className="rounded-(--radius-control) bg-nib-gold-500/12 p-4">
                       <p className="text-[12px] font-medium text-ink-2">Market value</p>
                       <p className="tabular text-[22px] font-bold leading-tight text-nib-gold-800 dark:text-nib-gold-400">
-                        {formatCurrency(valuation.marketValue)}
+                        {formatCurrency(figures.marketValue)}
                       </p>
                     </div>
                     <div className="flex items-baseline justify-between gap-2 text-[13px]">
                       <span className="text-ink-3">Forced-sale value</span>
                       <span className="tabular font-semibold text-ink">
-                        {valuation.forcedSaleValue
-                          ? formatCurrency(valuation.forcedSaleValue)
-                          : '—'}
+                        {figures.forcedSaleValue ? formatCurrency(figures.forcedSaleValue) : '—'}
                       </span>
                     </div>
-                    {valuation.calculatedAt ? (
-                      <p className="text-[12px] text-ink-3">
-                        Version {valuation.version} · {valuation.calculatedBy},{' '}
-                        {formatDateTime(valuation.calculatedAt)}
-                      </p>
-                    ) : null}
                   </div>
-                ) : valuation?.stale ? (
-                  <p className="rounded-(--radius-control) bg-st-review-bg p-3.5 text-[12.5px] text-ink-2">
-                    The property changed after the last calculation, so its figures were cleared.
-                    Recalculate before submitting for checking.
-                  </p>
-                ) : (
+                ) : figures?.stale ? null : (
                   <p className="text-[12.5px] text-ink-3">
-                    Not calculated yet. The assigned valuator records the property and calculates
-                    the value in the valuation workspace.
+                    Not entered yet. The assigned valuator enters the market and forced-sale values
+                    here once the valuation is started.
                   </p>
                 )}
-                {siteVisits ? (
-                  <Link
-                    href={`/requests/${record.id}/valuation#visits`}
-                    className="block space-y-1 rounded-(--radius-control) bg-surface-2 px-3.5 py-2.5 transition-colors hover:bg-surface-3"
-                  >
-                    <span className="flex flex-wrap items-center justify-between gap-2 text-[12.5px]">
-                      <span className="font-semibold text-ink">Site visit</span>
-                      {shownVisit ? (
-                        <SiteVisitCheckBadge
-                          check={shownVisit.check}
-                          distanceMeters={shownVisit.distanceMeters}
-                        />
-                      ) : (
-                        <span className="text-ink-3">None recorded</span>
-                      )}
-                    </span>
-                    {shownVisit ? (
-                      <span className="block text-[11.5px] text-ink-3">
-                        {shownVisit.visitedBy}, {formatDateTime(shownVisit.visitedAt)}
-                        {siteVisits.total > 1 ? ` · ${siteVisits.total} visits` : ''}
-                      </span>
-                    ) : null}
-                  </Link>
+                {figures?.calculatedAt ? (
+                  <p className="text-[12px] text-ink-3">
+                    Version {figures.version} · {figures.calculatedBy},{' '}
+                    {formatDateTime(figures.calculatedAt)}
+                  </p>
                 ) : null}
-                {openComments > 0 ? (
-                  <Link
-                    href={`/requests/${record.id}/valuation#review`}
-                    className="flex items-center gap-2.5 rounded-(--radius-control) bg-st-review-bg px-3.5 py-2.5 text-[12.5px] font-semibold text-ink transition-colors hover:bg-st-review/15"
-                  >
-                    <MessagesSquare className="h-4 w-4 text-st-review" aria-hidden="true" />
-                    {openComments} open review comment{openComments === 1 ? '' : 's'}
-                  </Link>
-                ) : null}
-                <Link
-                  href={`/requests/${record.id}/valuation`}
-                  className={buttonVariants({
-                    variant: canWorkValuation ? 'default' : 'outline',
-                    className: 'w-full',
-                  })}
-                >
-                  <Calculator aria-hidden="true" />
-                  {canWorkValuation ? 'Open valuation workspace' : 'View valuation'}
-                </Link>
               </CardContent>
             </Card>
           ) : null}

@@ -2,8 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '@/server/infrastructure/db/client';
 import { getMailer, getSmsSender } from '@/server/infrastructure/messaging';
 import type { MessageSender } from '@/server/domain/ports/messaging';
-import type { CaseStatus, SiteVisitCheck } from '@/server/domain/shared/enums';
-import { ON_SITE_CHECKS, formatDistance } from '@/server/domain/site-visit/location-check';
+import type { CaseStatus } from '@/server/domain/shared/enums';
 import { serverEnv } from '@/lib/env';
 import { logger } from '@/lib/logger';
 
@@ -35,37 +34,7 @@ export type CaseEvent =
   | 'SLA_APPROACHING'
   | 'SLA_BREACHED'
   | 'CASE_COMPLETED'
-  | 'FINAL_REPORT_AVAILABLE'
-  | 'SITE_VISIT_RECORDED'
-  | 'SITE_VISIT_FLAGGED';
-
-/** A site visit as a notification describes it. */
-export interface VisitFacts {
-  by: string;
-  check: SiteVisitCheck;
-  distanceMeters: string | null;
-  accessGained: boolean;
-  remarks: string | null;
-}
-
-/** A visit that proves presence is news; one that does not is a flag for the manager. */
-export function eventForSiteVisit(check: SiteVisitCheck): CaseEvent {
-  return ON_SITE_CHECKS.has(check) ? 'SITE_VISIT_RECORDED' : 'SITE_VISIT_FLAGGED';
-}
-
-/** What a flagged visit's notification says went wrong. */
-function flagReason(visit: VisitFacts): string {
-  switch (visit.check) {
-    case 'OUTSIDE_RADIUS':
-      return visit.distanceMeters
-        ? `${formatDistance(visit.distanceMeters)} from the property`
-        : 'away from the property';
-    case 'LOW_ACCURACY':
-      return 'with a GPS position too vague to verify';
-    default:
-      return 'without a location';
-  }
-}
+  | 'FINAL_REPORT_AVAILABLE';
 
 /** The events a workflow transition raises. */
 export function eventsForTransition(action: string, toStatus: CaseStatus): CaseEvent[] {
@@ -124,7 +93,7 @@ const DATE = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeZone: '
 function compose(
   event: CaseEvent,
   c: CaseFacts,
-  context: { action?: string; comment?: string | null; visit?: VisitFacts },
+  context: { action?: string; comment?: string | null },
 ): { subject: string; body: string } {
   const who = `${c.ownerName} (applicant ${c.applicantName})`;
   const note = context.comment ? `\n\n"${context.comment}"` : '';
@@ -195,28 +164,6 @@ function compose(
         subject: `Valuation report for ${c.caseNumber} is available`,
         body: `The signed valuation report and final letter for ${who} are ready on the case page.`,
       };
-    case 'SITE_VISIT_RECORDED': {
-      const v = context.visit;
-      const located = v?.check === 'LOCATION_SET';
-      return {
-        subject: `${v?.by ?? 'The valuator'} visited the property for ${c.caseNumber}`,
-        body: located
-          ? `Checked in on site for ${who}. The property had no coordinates, so this check-in set them - confirm them against the address on the map.`
-          : `Checked in and verified on site for ${who}${v?.distanceMeters ? ` (${formatDistance(v.distanceMeters)} from the property)` : ''}.${v && !v.accessGained ? ' Access was refused.' : ''}`,
-      };
-    }
-    case 'SITE_VISIT_FLAGGED': {
-      const v = context.visit;
-      const remark = v?.remarks
-        ? `
-
-Remarks: "${v.remarks}"`
-        : '';
-      return {
-        subject: `Site visit on ${c.caseNumber} could not be verified`,
-        body: `${v?.by ?? 'The valuator'} recorded a visit ${v ? flagReason(v) : 'that could not be verified'}. ${who}.${remark}`,
-      };
-    }
   }
 }
 
@@ -287,7 +234,6 @@ export async function dispatchCaseEvents(
     actorId?: string | null;
     action?: string;
     comment?: string | null;
-    visit?: VisitFacts;
   } = {},
 ): Promise<void> {
   if (events.length === 0) return;

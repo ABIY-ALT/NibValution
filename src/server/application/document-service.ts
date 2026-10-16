@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import { prisma, withTransaction } from '@/server/infrastructure/db/client';
 import { record } from '@/server/infrastructure/audit/audit-service';
 import { canAccessCase, assertPermission, type Actor } from '@/server/domain/rbac/authorize';
@@ -7,7 +6,6 @@ import { validateUpload } from '@/server/domain/documents/file-validation';
 import { statusForVerdict } from '@/server/domain/ports/scanner';
 import { getScanner } from '@/server/infrastructure/scanner';
 import { DOCUMENTS_PREFIX, QUARANTINE_PREFIX, getStorage } from '@/server/infrastructure/storage';
-import { assessPhoto, type CheckIn } from '@/server/domain/site-visit/location-check';
 import { getArrayConfig, getNumberConfig } from './configuration-service';
 import { BusinessRuleError, ForbiddenError, NotFoundError, assertUuid } from '@/lib/errors';
 import { logger } from '@/lib/logger';
@@ -64,81 +62,6 @@ export interface UploadInput {
   description?: string | null;
   /** Set when replacing an existing document with a new version. */
   supersedesId?: string | null;
-  /** Set for a photo taken during a site visit: the visit, and where the phone was. */
-  sitePhoto?: { siteVisitId: string; position: CheckIn | null } | null;
-}
-
-/** Site photos must be images a report can show. */
-const PHOTO_MIME_TYPES = new Set(['image/jpeg', 'image/png']);
-
-/** e.g. site-photo-20260912-104132-3fa9c1.jpg - the server's time, made unique. */
-function sitePhotoFilename(mime: string): string {
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
-  const extension = mime === 'image/png' ? 'png' : 'jpg';
-  return `site-photo-${stamp}-${randomBytes(3).toString('hex')}.${extension}`;
-}
-
-/**
- * Check that a site photo belongs to a visit on this case made by the uploader,
- * and judge where the phone was against the property's location. Done before a
- * byte is stored, like every other validation.
- */
-async function assessSitePhoto(
-  actor: Actor,
-  caseId: string,
-  categoryCode: string,
-  photo: { siteVisitId: string; position: CheckIn | null },
-) {
-  if (categoryCode !== 'SITE_PHOTO') {
-    throw new BusinessRuleError(
-      'SITE_PHOTO_CATEGORY',
-      'A photo taken on a site visit is filed as a site photograph.',
-    );
-  }
-  assertUuid(photo.siteVisitId, 'The site visit was not found.');
-  const visit = await prisma.siteVisit.findUnique({
-    where: { id: photo.siteVisitId },
-    select: { caseId: true, visitedById: true },
-  });
-  if (!visit || visit.caseId !== caseId) {
-    throw new NotFoundError('The site visit was not found on this case.');
-  }
-  if (visit.visitedById !== actor.id) {
-    throw new ForbiddenError('Photos are added to a visit by the valuator who made it.');
-  }
-
-  const civil = await prisma.civilProperty.findUnique({
-    where: { caseId },
-    select: { latitude: true, longitude: true },
-  });
-  const property =
-    civil ??
-    (await prisma.mechanicalProperty.findUnique({
-      where: { caseId },
-      select: { latitude: true, longitude: true },
-    }));
-  const [radiusMeters, maxAccuracyMeters] = await Promise.all([
-    getNumberConfig('site_visit.radius_meters', 200),
-    getNumberConfig('site_visit.max_accuracy_meters', 100),
-  ]);
-  const assessment = assessPhoto({
-    position: photo.position,
-    property:
-      property?.latitude && property.longitude
-        ? { latitude: Number(property.latitude), longitude: Number(property.longitude) }
-        : null,
-    radiusMeters,
-    maxAccuracyMeters,
-  });
-
-  return {
-    siteVisitId: photo.siteVisitId,
-    latitude: photo.position?.latitude.toFixed(7) ?? null,
-    longitude: photo.position?.longitude.toFixed(7) ?? null,
-    accuracyMeters: photo.position?.accuracyMeters.toFixed(2) ?? null,
-    distanceMeters: assessment.distanceMeters?.toFixed(2) ?? null,
-    locationCheck: assessment.check,
-  };
 }
 
 export interface UploadResult {
@@ -187,16 +110,7 @@ export async function uploadDocument(
     { filename: input.filename, declaredMime: input.declaredMime, bytes: input.bytes },
     { maxFileBytes, allowedMimeTypes },
   );
-  const photo = input.sitePhoto
-    ? await assessSitePhoto(actor, input.caseId, input.categoryCode, input.sitePhoto)
-    : null;
-  if (photo && !PHOTO_MIME_TYPES.has(validated.mime)) {
-    throw new BusinessRuleError('SITE_PHOTO_TYPE', 'A site photo must be a JPEG or PNG image.');
-  }
-  // A camera names every photo alike (an iPhone sends "image.jpg" each time),
-  // and live filenames are unique per case and category, so a site photo is
-  // named by the server instead.
-  const filename = photo ? sitePhotoFilename(validated.mime) : validated.filename;
+  const filename = validated.filename;
 
   // 2. Per-case budget, so one case cannot fill the volume.
   const existing = await prisma.propertyDocument.aggregate({
@@ -300,7 +214,6 @@ export async function uploadDocument(
         scanDetail: scan.detail,
         description: input.description ?? null,
         uploadedById: actor.id,
-        ...photo,
       },
       select: { id: true, originalFilename: true, scanStatus: true },
     });
@@ -319,14 +232,6 @@ export async function uploadDocument(
         mimeType: validated.mime,
         sha256: quarantined.sha256,
         scanStatus,
-        ...(photo
-          ? {
-              siteVisitId: photo.siteVisitId,
-              locationCheck: photo.locationCheck,
-              distanceMeters: photo.distanceMeters,
-              accuracyMeters: photo.accuracyMeters,
-            }
-          : {}),
         // The storage key is deliberately absent: an audit record should prove
         // what happened, not hand out a second copy of the location.
       },

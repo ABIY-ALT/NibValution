@@ -1,36 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma, withTransaction } from '@/server/infrastructure/db/client';
-import { createCase, listCases, performTransition } from '@/server/application/case-service';
-import { uploadDocument } from '@/server/application/document-service';
-import { saveBuilding, saveCivilProperty } from '@/server/application/property-service';
-import type { Prisma } from '@prisma/client';
-import {
-  calculateValuation,
-  loadSiteVisitEvidence,
-  loadValuationWorkspace,
-  recordSiteVisit,
-} from '@/server/application/valuation-service';
+import { createCase, performTransition } from '@/server/application/case-service';
+import { loadValuationCard, recordValuation } from '@/server/application/valuation-service';
 import { verifyCurrentValuation } from '@/server/application/valuation-state';
 import { loadApprovalRecord } from '@/server/application/signature-service';
 import { listCaseDocuments, loadCaseDocument } from '@/server/application/case-document-service';
 import { resolveFinalLetterAuthority } from '@/server/domain/approval/routing';
-import {
-  raiseComment,
-  replyToComment,
-  setCommentResolved,
-} from '@/server/application/review-service';
-import {
-  invalidateConfigurationCache,
-  loadFinalLetterRules,
-  loadParameterSnapshot,
-} from '@/server/application/configuration-service';
-import { calculateCivil } from '@/server/domain/valuation/civil-engine';
-import {
-  calculateRequestSchema,
-  siteVisitSchema,
-  type CalculateRequest,
-} from '@/lib/validation/valuation';
-import { buildingSchema, civilPropertySchema } from '@/lib/validation/property';
+import { loadFinalLetterRules } from '@/server/application/configuration-service';
+import { valuationFiguresSchema, type ValuationFiguresInput } from '@/lib/validation/valuation';
 import type { PermissionCode } from '@/server/domain/rbac/permissions';
 import type { Actor } from '@/server/domain/rbac/authorize';
 import type { RoleCode } from '@/server/domain/shared/enums';
@@ -38,10 +15,10 @@ import { BusinessRuleError, ForbiddenError, NotFoundError, WorkflowError } from 
 
 /**
  * The valuation module end to end against the real database (roadmap Phase 3):
- * a civil case is assigned and started, its property registered and valued;
- * the figures, the approach rows and the reproducibility record are persisted
- * together; the submit-for-checking guard re-runs the stored calculation and
- * refuses a tampered or out-of-date figure.
+ * a civil case is assigned and started and its figures entered by the
+ * valuator; the figures and the record of their entry are persisted together;
+ * the submit-for-checking guard checks the case against that entry and refuses
+ * a tampered or out-of-date figure.
  */
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -101,7 +78,6 @@ describeIfDb('valuation module', () => {
   let director: Actor;
 
   let caseId = '';
-  let buildingId = '';
 
   beforeAll(async () => {
     const org = await prisma.organization.create({
@@ -165,35 +141,6 @@ describeIfDb('valuation module', () => {
     await transition(owner, 'SUBMIT_REQUEST');
     await transition(manager, 'ASSIGN_MAKER', { assigneeId: maker.id });
     await transition(maker, 'START_VALUATION');
-
-    await saveCivilProperty(
-      maker,
-      civilPropertySchema.parse({
-        caseId,
-        categoryCode: 'CIV_RESIDENTIAL',
-        landHoldingRight: 'FREEHOLD',
-        plotArea: '500',
-      }),
-      CTX,
-    );
-    await saveBuilding(
-      maker,
-      buildingSchema.parse({
-        caseId,
-        buildingNumber: 1,
-        buildingType: 'G+2 residence',
-        constructionStatus: 'COMPLETED',
-        constructionYear: 2011,
-        condition: 'GOOD',
-        grossArea: '300',
-      }),
-      CTX,
-    );
-    const building = await prisma.civilBuilding.findFirstOrThrow({
-      where: { property: { caseId } },
-      select: { id: true },
-    });
-    buildingId = building.id;
   });
 
   afterAll(async () => {
@@ -262,190 +209,76 @@ describeIfDb('valuation module', () => {
   const statusOf = async () =>
     (await prisma.valuationCase.findUniqueOrThrow({ where: { id: caseId } })).status;
 
-  /** The location ratings of the test property: the best of each, so only the built-up ratio bites. */
-  const LOCATION = {
-    city: 'Adama',
-    purpose: 'RESIDENTIAL',
-    propertyType: 'Residential Building',
-    floorLevel: '',
-    utility: 'Excellent (Available)',
-    neighbourhood: 'Excellent (Very Attractive)',
-    roadQuality: 'Stable Asphalt',
-    roadWidth: 'Access Road Width >= 15m',
-    proximity: 'Excellent (Center)',
-    accessibility: 'Within 100m',
-  };
-
   /**
-   * The maker's worksheet. `fenceArea` stands for any input the maker changes
-   * between calculations; `withBuilding` leaves the registered building out.
+   * The maker's figures, written as a valuator types them. `market` and
+   * `forced` stand for any figures the maker changes between entries.
    */
-  function request(fenceArea = '120', withBuilding = true): CalculateRequest {
-    return calculateRequestSchema.parse({
-      discipline: 'CIVIL',
+  function request(market = '6,500,000', forced = '4,875,000'): ValuationFiguresInput {
+    return valuationFiguresSchema.parse({
       caseId,
-      worksheet: {
-        valuationDate: '2026-09-01',
-        location: LOCATION,
-        lease: { totalYears: '', totalAmount: '', paidAmount: '', freeholdArea: '' },
-        buildings: withBuilding
-          ? [
-              {
-                buildingId,
-                costType: '2-5 Storey',
-                count: '1',
-                heightM: '',
-                // Foundation and RC structure, each the whole of its element.
-                components: [
-                  { row: 11, sharePercent: '100', completionPercent: '' },
-                  { row: 13, sharePercent: '100', completionPercent: '' },
-                ],
-                newComponents: [],
-                defects: [{ code: 17, percent: '50' }],
-                supplementary: [],
-              },
-            ]
-          : [],
-        siteWorks: {
-          civil: [
-            {
-              item: 'HCB Fence Two Sides Pointed (m2)',
-              description: 'Boundary fence',
-              quantity: fenceArea,
-              completionPercent: '',
-              pool: null,
-            },
-          ],
-          gasStation: [],
-          coffeeSite: [],
-        },
-        reconciliation: { override: false, costWeight: '75', salesWeight: '25', rationale: '' },
-        forcedSale: { override: false, percent: '', reason: '' },
-        remarks: 'Integration test valuation',
-      },
+      valuationDate: '2026-09-01',
+      marketValue: market,
+      forcedSaleValue: forced,
+      remarks: 'Integration test valuation',
     });
   }
 
   const verified = () => withTransaction((tx) => verifyCurrentValuation(tx, caseId));
 
-  it('refuses submission for checking before any calculation', async () => {
+  it('refuses submission for checking before any figures are entered', async () => {
     await expect(transition(maker, 'SUBMIT_FOR_CHECKING')).rejects.toThrow(
-      /calculation is not complete/,
+      /figures are not complete/,
     );
   });
 
-  it('refuses a calculation by anyone but the assigned maker', async () => {
-    await expect(calculateValuation(checker, request(), CTX)).rejects.toSatisfy(
+  it('refuses an entry by anyone but the assigned maker', async () => {
+    await expect(recordValuation(checker, request(), CTX)).rejects.toSatisfy(
       (error) => error instanceof ForbiddenError || error instanceof NotFoundError,
     );
   });
 
-  it('calculates, and persists the figures with their full working', async () => {
-    const result = await calculateValuation(maker, request(), CTX);
-
-    // The same figures the engine gives for the same input and the parameter
-    // set in force on the valuation date.
-    const snapshot = await loadParameterSnapshot(new Date('2026-09-01T00:00:00Z'));
-    const expected = calculateCivil(
-      {
-        valuationDate: '2026-09-01',
-        location: { ...LOCATION, floorLevel: null },
-        land: {
-          holdingRight: 'FREEHOLD',
-          plotArea: '500',
-          latitude: null,
-          longitude: null,
-          leaseRemainingYears: null,
-          leaseTotalYears: null,
-          leaseTotalAmount: null,
-          leasePaidAmount: null,
-          freeholdArea: null,
-        },
-        buildings: [
-          {
-            buildingId,
-            buildingNumber: 1,
-            name: 'G+2 residence',
-            constructionStatus: 'COMPLETED',
-            progressPercent: null,
-            floorArea: '300',
-            builtUpArea: null,
-            costType: '2-5 Storey',
-            count: '1',
-            heightM: null,
-            components: [
-              { row: 11, sharePercent: '100', completionPercent: null },
-              { row: 13, sharePercent: '100', completionPercent: null },
-            ],
-            newComponents: [],
-            defects: [{ code: 17, percent: '50' }],
-            supplementary: [],
-          },
-        ],
-        siteWorks: {
-          civil: [
-            {
-              item: 'HCB Fence Two Sides Pointed (m2)',
-              description: 'Boundary fence',
-              quantity: '120',
-              completionPercent: null,
-              pool: null,
-            },
-          ],
-          gasStation: [],
-          coffeeSite: [],
-        },
-        reconciliation: null,
-        forcedSale: null,
-      },
-      snapshot,
-    );
-    // Adama, residential, 500 m² with no coordinates: 12,000 x 1.25, the
-    // first 200 m² in full and the rest at 0.9, x 0.75 for a built-up area
-    // that is not recorded.
-    expect(expected.land.maxRate.value).toBe('15000.0000');
-    expect(expected.land.tiers.averageRate).toBe('14100.0000');
-    expect(expected.land.locationValue).toBe('5287500.00');
-    // 1,945.925 per m² of fence.
-    expect(expected.siteWorks.civilTotal).toBe('233511.00');
-    expect(result.marketValue).toBe(expected.marketValue);
-    expect(result.forcedSaleValue).toBe(expected.forcedSaleValue);
-    expect(result.version).toBe(1);
+  it('records the figures as entered, with the record of their entry', async () => {
+    const result = await recordValuation(maker, request(), CTX);
+    expect(result).toEqual({
+      marketValue: '6500000.00',
+      forcedSaleValue: '4875000.00',
+      version: 1,
+    });
 
     const valuation = await prisma.valuation.findFirstOrThrow({
       where: { caseId, isCurrent: true },
       include: {
-        costApproach: { include: { lineItems: true, depreciations: true } },
+        costApproach: true,
         reconciliation: true,
         forcedSale: true,
         calculationRuns: true,
       },
     });
-    expect(valuation.marketValue?.toFixed(2)).toBe(expected.marketValue);
-    expect(valuation.parameterSetId).toBe(snapshot.setId);
-    // Land, one building, one plot civil work - each with its own formula.
-    expect(valuation.costApproach?.lineItems).toHaveLength(3);
-    expect(valuation.costApproach?.landValue?.toFixed(2)).toBe(expected.land.value);
-    expect(valuation.costApproach?.factor?.toFixed(6)).toBe(expected.cost.factor);
-    // Depreciation is by recorded defects, carried on the building's line.
-    expect(valuation.costApproach?.depreciations).toHaveLength(0);
-    expect(valuation.costApproach?.totalDepreciation?.toFixed(2)).toBe(
-      expected.cost.totalDepreciation,
-    );
-    expect(valuation.reconciliation?.reconciledValue.toFixed(2)).toBe(expected.marketValue);
-    expect(valuation.forcedSale?.forcedSaleValue.toFixed(2)).toBe(expected.forcedSaleValue);
+    expect(valuation.marketValue?.toFixed(2)).toBe('6500000.00');
+    expect(valuation.forcedSaleValue?.toFixed(2)).toBe('4875000.00');
+    expect(valuation.formulaVersion).toBe('manual-1.0.0');
+    expect(valuation.remarks).toBe('Integration test valuation');
+    // Nothing is calculated: no parameters priced the figures, and there is no working.
+    expect(valuation.parameterSetId).toBeNull();
+    expect(valuation.costApproach).toBeNull();
+    expect(valuation.reconciliation).toBeNull();
+    expect(valuation.forcedSale).toBeNull();
+
     expect(valuation.calculationRuns).toHaveLength(1);
-    expect(valuation.calculationRuns[0]?.inputHash).toMatch(/^[0-9a-f]{64}$/);
-    expect(valuation.calculationRuns[0]?.formulaVersion).toBe('civil-2.0.0');
-    // The run keeps the part of the guideline it read: one city, no zones.
-    const kept = valuation.calculationRuns[0]?.parameterSnapshot as {
-      tables: Record<string, { cities?: Record<string, unknown>; polygons?: unknown[] }>;
-    };
-    expect(Object.keys(kept.tables['guideline.cities']?.cities ?? {})).toEqual(['Adama']);
-    expect(kept.tables['guideline.location_polygons']?.polygons).toEqual([]);
+    const run = valuation.calculationRuns[0];
+    expect(run?.engine).toBe('CIVIL');
+    expect(run?.formulaVersion).toBe('manual-1.0.0');
+    expect(run?.inputHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(run?.outputSnapshot).toEqual({
+      formulaVersion: 'manual-1.0.0',
+      marketValue: '6500000.00',
+      forcedSaleValue: '4875000.00',
+      forcedSalePercent: '75.00',
+    });
 
     const theCase = await prisma.valuationCase.findUniqueOrThrow({ where: { id: caseId } });
-    expect(theCase.finalValue?.toFixed(2)).toBe(expected.marketValue);
+    expect(theCase.finalValue?.toFixed(2)).toBe('6500000.00');
+    expect(theCase.forcedSaleValue?.toFixed(2)).toBe('4875000.00');
 
     const audit = await prisma.auditLog.findFirst({
       where: { entity: 'Valuation', entityId: valuation.id, action: 'CALCULATION_PERFORMED' },
@@ -453,11 +286,11 @@ describeIfDb('valuation module', () => {
     expect(audit).not.toBeNull();
   });
 
-  it('verifies the stored calculation by re-running it', async () => {
+  it('verifies the figures against the stored entry', async () => {
     expect(await verified()).toBe(true);
   });
 
-  it('refuses a stored figure that no longer matches its calculation', async () => {
+  it('refuses a stored figure that no longer matches its entry', async () => {
     const valuation = await prisma.valuation.findFirstOrThrow({
       where: { caseId, isCurrent: true },
     });
@@ -474,212 +307,56 @@ describeIfDb('valuation module', () => {
     expect(await verified()).toBe(true);
   });
 
-  it('clears the figures when the property changes, until recalculated', async () => {
-    await saveCivilProperty(
-      maker,
-      civilPropertySchema.parse({
+  it('offers the figures, from the last entry, to the assigned valuator only', async () => {
+    const forMaker = await loadValuationCard(maker, caseId);
+    expect(forMaker?.canEnterFigures).toBe(true);
+    // The form starts from the last entry, as typed.
+    expect(forMaker?.figures).toEqual({
+      valuationDate: '2026-09-01',
+      marketValue: '6500000',
+      forcedSaleValue: '4875000',
+      remarks: 'Integration test valuation',
+    });
+    expect(forMaker?.summary?.marketValue).toBe('6500000');
+
+    const forManager = await loadValuationCard(manager, caseId);
+    expect(forManager?.canEnterFigures).toBe(false);
+    expect(forManager?.summary?.marketValue).toBe('6500000');
+  });
+
+  it('refuses figures that are not amounts, or a forced-sale value above the market value', () => {
+    const figures = (marketValue: string, forcedSaleValue: string) =>
+      valuationFiguresSchema.safeParse({
         caseId,
-        categoryCode: 'CIV_RESIDENTIAL',
-        landHoldingRight: 'FREEHOLD',
-        plotArea: '520',
-      }),
-      CTX,
-    );
-    expect(await verified()).toBe(false);
-    const cleared = await prisma.valuationCase.findUniqueOrThrow({ where: { id: caseId } });
-    expect(cleared.finalValue).toBeNull();
+        valuationDate: '2026-09-01',
+        marketValue,
+        forcedSaleValue,
+        remarks: '',
+      });
+    const failed = (parsed: ReturnType<typeof figures>) =>
+      parsed.error?.issues.map((issue) => issue.path.join('.')) ?? [];
 
-    const workspace = await loadValuationWorkspace(maker, caseId);
-    expect(workspace.canRead && workspace.summary?.stale).toBe(true);
-
-    const again = await calculateValuation(maker, request(), CTX);
-    // Still version 1: a draft is recalculated in place, and each run is kept.
-    expect(again.version).toBe(1);
-    expect(await verified()).toBe(true);
-    const runs = await prisma.calculationRun.count({ where: { valuation: { caseId } } });
-    expect(runs).toBe(2);
+    expect(failed(figures('100', '150'))).toEqual(['forcedSaleValue']);
+    expect(failed(figures('abc', '150'))).toEqual(['marketValue']);
+    expect(failed(figures('0', '0'))).toEqual(['marketValue', 'forcedSaleValue']);
+    expect(failed(figures('100.555', '50'))).toEqual(['marketValue']);
+    expect(figures('100', '100').success).toBe(true);
   });
 
-  it('rejects a worksheet that leaves a registered building unvalued', async () => {
-    await expect(calculateValuation(maker, request('120', false), CTX)).rejects.toThrow(
-      BusinessRuleError,
-    );
-  });
-
-  /** Runs `fn` with the site-visit rule switched on, restoring the setting after. */
-  async function withSiteVisitRule<T>(fn: () => Promise<T>): Promise<T> {
-    const key = 'site_visit.require_on_site';
-    const previous = await prisma.systemConfiguration.findUnique({ where: { key } });
-    await prisma.systemConfiguration.upsert({
-      where: { key },
-      update: { value: 1 },
-      create: { key, value: 1, valueType: 'number' },
-    });
-    invalidateConfigurationCache();
-    try {
-      return await fn();
-    } finally {
-      if (previous) {
-        await prisma.systemConfiguration.update({
-          where: { key },
-          data: { value: previous.value as Prisma.InputJsonValue },
-        });
-      } else {
-        await prisma.systemConfiguration.delete({ where: { key } });
-      }
-      invalidateConfigurationCache();
-    }
-  }
-
-  const checkIn = (fields: Record<string, string>) =>
-    recordSiteVisit(
-      maker,
-      siteVisitSchema.parse({ caseId, accessGained: 'yes', findings: '', remarks: '', ...fields }),
-      CTX,
-    );
-  const latestVisit = () =>
-    prisma.siteVisit.findFirstOrThrow({ where: { caseId }, orderBy: { createdAt: 'desc' } });
-
-  it('with the site-visit rule on, refuses checking without a visit at the property', async () => {
-    await withSiteVisitRule(async () => {
-      await expect(transition(maker, 'SUBMIT_FOR_CHECKING')).rejects.toThrow(/site visit/);
-      // A visit with no position and no explanation does not satisfy it.
-      await checkIn({});
-      await expect(transition(maker, 'SUBMIT_FOR_CHECKING')).rejects.toThrow(/site visit/);
-    });
-    expect(await statusOf()).toBe('ON_PROGRESS');
-  });
-
-  it('judges each check-in against the property, at the server’s time', async () => {
-    // The property has no coordinates, so a precise check-in becomes its location.
-    const before = Date.now();
-    await checkIn({ latitude: '9.0100000', longitude: '38.7600000', accuracyMeters: '12' });
-    const first = await latestVisit();
-    expect(first.locationCheck).toBe('LOCATION_SET');
-    expect(first.visitedAt.getTime()).toBeGreaterThanOrEqual(before - 1000);
-    const property = await prisma.civilProperty.findUniqueOrThrow({ where: { caseId } });
-    expect(property.latitude?.toFixed(7)).toBe('9.0100000');
-    // The coordinates choose the location zone that prices the land, so figures
-    // calculated before the property had any no longer stand.
-    expect(await verified()).toBe(false);
-    const located = await calculateValuation(maker, request(), CTX);
-    expect(await verified()).toBe(true);
-    // The point is in no location zone of Adama, so the city rate still applies.
-    const run = await prisma.calculationRun.findFirstOrThrow({
-      where: { valuation: { caseId } },
-      orderBy: { performedAt: 'desc' },
-    });
-    const working = run.outputSnapshot as {
-      land: { maxRate: { source: string }; coordinates: unknown };
-    };
-    expect(working.land.coordinates).toEqual({ latitude: '9.01', longitude: '38.76' });
-    expect(working.land.maxRate.source).toBe('CITY_TABLE');
-    expect(located.version).toBe(1);
-
-    await checkIn({ latitude: '9.0105000', longitude: '38.7600000', accuracyMeters: '15' });
-    const near = await latestVisit();
-    expect(near.locationCheck).toBe('VERIFIED');
-    expect(Number(near.distanceMeters)).toBeCloseTo(55.6, 0);
-    expect(near.radiusMeters).toBe(200);
-
-    await checkIn({ latitude: '9.0600000', longitude: '38.7600000', accuracyMeters: '10' });
-    expect((await latestVisit()).locationCheck).toBe('OUTSIDE_RADIUS');
-
-    await checkIn({ latitude: '9.0100000', longitude: '38.7600000', accuracyMeters: '900' });
-    expect((await latestVisit()).locationCheck).toBe('LOW_ACCURACY');
-
-    const evidence = await loadSiteVisitEvidence(checker, caseId);
-    expect(evidence?.onSite?.check).toBe('VERIFIED');
-    expect(evidence?.latest?.check).toBe('LOW_ACCURACY');
-  });
-
-  it('tells the Maker Manager of each visit, flagging one that does not prove presence', async () => {
-    const notices = await prisma.notification.findMany({
-      where: { caseId, recipientId: manager.id, eventType: { startsWith: 'SITE_VISIT_' } },
-      select: { eventType: true, subject: true, body: true },
-    });
-    const recorded = notices.filter((n) => n.eventType === 'SITE_VISIT_RECORDED');
-    const flagged = notices.filter((n) => n.eventType === 'SITE_VISIT_FLAGGED');
-    // Verified and located visits are news; the far, vague and unlocated ones are flags.
-    expect(recorded.length).toBeGreaterThanOrEqual(2);
-    expect(flagged.length).toBeGreaterThanOrEqual(3);
-    expect(flagged.some((n) => /km from the property/.test(n.body))).toBe(true);
-    expect(flagged.some((n) => /without a location/.test(n.body))).toBe(true);
-    // Nobody is told of their own action.
-    expect(
-      await prisma.notification.count({
-        where: { caseId, recipientId: maker.id, eventType: { startsWith: 'SITE_VISIT_' } },
-      }),
-    ).toBe(0);
-  });
-
-  it('stamps a site photo with where it was taken, for the visit’s own valuator only', async () => {
-    const visit = await latestVisit();
-    const jpeg = Buffer.concat([
-      Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]),
-      Buffer.alloc(64),
-    ]);
-    const upload = (actor: Actor, extra: Partial<Parameters<typeof uploadDocument>[1]> = {}) =>
-      uploadDocument(
-        actor,
-        {
-          caseId,
-          categoryCode: 'SITE_PHOTO',
-          filename: 'site.jpg',
-          declaredMime: 'image/jpeg',
-          bytes: jpeg,
-          sitePhoto: {
-            siteVisitId: visit.id,
-            position: { latitude: 9.0101, longitude: 38.76, accuracyMeters: 8 },
-          },
-          ...extra,
-        },
-        CTX,
-      );
-
-    const onSite = await upload(maker);
-    const stored = await prisma.propertyDocument.findUniqueOrThrow({ where: { id: onSite.id } });
-    expect(stored.siteVisitId).toBe(visit.id);
-    // Named by the server: a second "site.jpg" from the camera must not collide.
-    expect(stored.originalFilename).toMatch(/^site-photo-\d{8}-\d{6}-[0-9a-f]{6}\.jpg$/);
-    expect(stored.locationCheck).toBe('VERIFIED');
-    expect(Number(stored.distanceMeters)).toBeCloseTo(11.1, 0);
-
-    const unlocated = await upload(maker, {
-      sitePhoto: { siteVisitId: visit.id, position: null },
-    });
-    expect(
-      (await prisma.propertyDocument.findUniqueOrThrow({ where: { id: unlocated.id } }))
-        .locationCheck,
-    ).toBe('NO_LOCATION');
-
-    await expect(upload(maker, { categoryCode: 'OTHER' })).rejects.toThrow(/site photograph/);
-    await expect(upload(checker)).rejects.toThrow();
-  });
-
-  it('lists the case by its site-visit evidence', async () => {
-    const { caseNumber } = await prisma.valuationCase.findUniqueOrThrow({ where: { id: caseId } });
-    const find = async (siteVisit: 'VERIFIED' | 'FLAGGED' | 'NONE') =>
-      (await listCases(manager, { search: caseNumber, siteVisit })).rows.map((r) => r.id);
-    expect(await find('VERIFIED')).toEqual([caseId]);
-    expect(await find('FLAGGED')).toEqual([]);
-    expect(await find('NONE')).toEqual([]);
-  });
-
-  it('lets the case move on to checking once calculated, and then freezes calculation', async () => {
-    // The verified visit above satisfies the site-visit rule.
-    await withSiteVisitRule(() => transition(maker, 'SUBMIT_FOR_CHECKING'));
+  it('lets the case move on to checking once its figures are entered, and then freezes them', async () => {
+    await transition(maker, 'SUBMIT_FOR_CHECKING');
     const theCase = await prisma.valuationCase.findUniqueOrThrow({ where: { id: caseId } });
     expect(theCase.status).toBe('SUBMITTED_FOR_CHECKING');
 
-    await expect(calculateValuation(maker, request('150'), CTX)).rejects.toThrow(
+    await expect(recordValuation(maker, request('7,000,000'), CTX)).rejects.toThrow(
       /On Progress or Returned for Correction/,
     );
+    expect((await loadValuationCard(maker, caseId))?.canEnterFigures).toBe(false);
   });
 
   it('keeps a stale workflow error distinct from the valuation guard', async () => {
     // Submitting again from the wrong status is a workflow refusal, not a
-    // calculation one - the two failures must stay distinguishable.
+    // valuation one - the two failures must stay distinguishable.
     await expect(transition(maker, 'SUBMIT_FOR_CHECKING')).rejects.toBeInstanceOf(WorkflowError);
   });
 
@@ -699,58 +376,18 @@ describeIfDb('valuation module', () => {
     expect((await openTask('PERFORM_CHECKING'))?.assigneeId).toBe(checker.id);
   });
 
-  it('refuses a review comment from anyone but the assigned checker', async () => {
-    await expect(
-      raiseComment(maker, { caseId, section: 'LAND', body: 'I would like to flag this.' }, CTX),
-    ).rejects.toBeInstanceOf(ForbiddenError);
+  it('refuses a return for correction without a comment', async () => {
+    await expect(transition(checker, 'RETURN_FOR_CORRECTION')).rejects.toThrow(BusinessRuleError);
+    expect(await statusOf()).toBe('CHECKING');
   });
 
-  it('moves the case to COMMENTED on the first comment, and records each by section', async () => {
-    await raiseComment(
-      checker,
-      { caseId, section: 'LAND', body: 'The land rate is above the recent Bole sales.' },
-      CTX,
-    );
-    expect(await statusOf()).toBe('COMMENTED');
-
-    // A second comment while COMMENTED adds a thread without another transition.
-    await raiseComment(
-      checker,
-      { caseId, section: 'BUILDINGS', body: 'Confirm the construction year of building 1.' },
-      CTX,
-    );
-    expect(await statusOf()).toBe('COMMENTED');
-
-    const comments = await prisma.comment.findMany({
-      where: { caseId },
-      orderBy: { createdAt: 'asc' },
-    });
-    expect(comments.map((c) => c.section)).toEqual(['LAND', 'BUILDINGS']);
-    const history = await prisma.workflowHistory.count({
-      where: { caseId, action: 'ADD_CHECKER_COMMENT' },
-    });
-    expect(history).toBe(1);
-  });
-
-  it('refuses to complete checking while a comment is open', async () => {
-    await expect(transition(checker, 'COMPLETE_CHECKING')).rejects.toThrow(/unresolved/);
-  });
-
-  it('lets only the checker resolve a comment', async () => {
-    const comment = await prisma.comment.findFirstOrThrow({ where: { caseId, section: 'LAND' } });
-    await expect(
-      setCommentResolved(maker, { caseId, commentId: comment.id, resolved: true }, CTX),
-    ).rejects.toBeInstanceOf(ForbiddenError);
-  });
-
-  it('returns for correction, recording the flagged sections and ending the review task', async () => {
+  it('returns for correction with the checker’s comment, ending the review task', async () => {
     await transition(checker, 'RETURN_FOR_CORRECTION', {
-      comment: 'Please address both review comments and recalculate.',
+      comment: 'The land rate is above the recent Bole sales; please revise the figures.',
     });
     expect(await statusOf()).toBe('RETURNED_FOR_CORRECTION');
 
     const cycle = await prisma.correctionCycle.findFirstOrThrow({ where: { caseId } });
-    expect(cycle.flaggedSections).toEqual(expect.arrayContaining(['LAND', 'BUILDINGS']));
     expect(cycle.resolvedAt).toBeNull();
 
     expect(await openTask('PERFORM_CHECKING')).toBeNull();
@@ -758,15 +395,14 @@ describeIfDb('valuation module', () => {
     expect((await currentValuation()).status).toBe('DRAFT');
   });
 
-  it('lets the maker answer and recalculate while the case is returned', async () => {
-    const comment = await prisma.comment.findFirstOrThrow({ where: { caseId, section: 'LAND' } });
-    await replyToComment(
-      maker,
-      { caseId, parentId: comment.id, body: 'Fence re-measured on site at 100 m².' },
-      CTX,
-    );
-    const result = await calculateValuation(maker, request('100'), CTX);
-    expect(result.version).toBe(1);
+  it('lets the maker re-enter the figures while the case is returned', async () => {
+    expect((await loadValuationCard(maker, caseId))?.canEnterFigures).toBe(true);
+    const result = await recordValuation(maker, request('6,200,000', '4,650,000'), CTX);
+    expect(result).toEqual({
+      marketValue: '6200000.00',
+      forcedSaleValue: '4650000.00',
+      version: 1,
+    });
     expect(await verified()).toBe(true);
   });
 
@@ -776,7 +412,7 @@ describeIfDb('valuation module', () => {
 
   it('resubmits to the same checker and closes the correction cycle with its rework time', async () => {
     await transition(maker, 'RESUBMIT', {
-      comment: 'Land rate revised and construction year confirmed from the permit.',
+      comment: 'Land rate revised against the recent Bole sales.',
     });
     expect(await statusOf()).toBe('CHECKING');
 
@@ -785,18 +421,12 @@ describeIfDb('valuation module', () => {
     expect(cycle.resolutionNote).toContain('Land rate revised');
     expect(cycle.reworkSeconds).toBeGreaterThanOrEqual(0);
 
-    // The review task reopens for the same checker - the round trip that used
-    // to collide with a task left open by the return.
+    // The review task reopens for the same checker.
     expect((await openTask('PERFORM_CHECKING'))?.assigneeId).toBe(checker.id);
     expect((await currentValuation()).status).toBe('UNDER_CHECK');
   });
 
-  it('completes checking once every comment is resolved, recording the checker', async () => {
-    const open = await prisma.comment.findMany({ where: { caseId, parentId: null } });
-    for (const comment of open) {
-      await setCommentResolved(checker, { caseId, commentId: comment.id, resolved: true }, CTX);
-    }
-
+  it('completes checking, recording the checker', async () => {
     await transition(checker, 'COMPLETE_CHECKING');
     expect(await statusOf()).toBe('CHECKED');
 
@@ -875,27 +505,21 @@ describeIfDb('valuation module', () => {
       valuation: { marketValue: string };
       approvals: { level: string }[];
       signer: { id: string };
-      siteInspection: { check: string; photos: { id: string; sha256: string; check: string }[] }[];
+      siteInspection: unknown[];
+      calculation: { output: unknown };
     };
     const theCase = await prisma.valuationCase.findUniqueOrThrow({ where: { id: caseId } });
     expect(document.valuation.marketValue).toBe(theCase.finalValue?.toFixed(2));
     expect(document.approvals[0]?.level).toBe('CHECKER');
     expect(document.signer.id).toBe(director.id);
-
-    // The site inspection is part of what was signed: every visit, and each
-    // photo by its fingerprint.
-    expect(document.siteInspection).toHaveLength(
-      await prisma.siteVisit.count({ where: { caseId } }),
-    );
-    const photos = document.siteInspection.flatMap((v) => v.photos);
-    const stored = await prisma.propertyDocument.findMany({
-      where: { caseId, siteVisitId: { not: null } },
-      select: { id: true, sha256: true },
+    // What was signed is the valuator's entry; no site visits are recorded.
+    expect(document.calculation.output).toEqual({
+      formulaVersion: 'manual-1.0.0',
+      marketValue: '6200000.00',
+      forcedSaleValue: '4650000.00',
+      forcedSalePercent: '75.00',
     });
-    expect(photos.map((p) => p.id).sort()).toEqual(stored.map((p) => p.id).sort());
-    expect(photos.every((p) => stored.some((s) => s.id === p.id && s.sha256 === p.sha256))).toBe(
-      true,
-    );
+    expect(document.siteInspection).toEqual([]);
 
     const record = await loadApprovalRecord(director, caseId);
     expect(record?.signature?.check).toBe('VALID');

@@ -12,7 +12,6 @@ import {
 } from '@/server/domain/workflow/workflow-service';
 import type { WorkflowAction } from '@/server/domain/workflow/transitions';
 import { resolveRouting } from '@/server/domain/approval/routing';
-import { ON_SITE_CHECKS, type VisitSummary } from '@/server/domain/site-visit/location-check';
 import { caseScopeFilter } from './dashboard-service';
 import { verifyCurrentValuation } from './valuation-state';
 import { signApprovedValuation } from './signature-service';
@@ -225,33 +224,8 @@ export interface CaseListFilter {
   overdueOnly?: boolean;
   /** Only cases assigned to this actor as maker or checker. */
   mineOnly?: boolean;
-  /** By site-visit evidence; see `summarizeVisits`. */
-  siteVisit?: VisitSummary;
   page?: number;
   pageSize?: number;
-}
-
-const ON_SITE = [...ON_SITE_CHECKS];
-
-/** The same three-way split `summarizeVisits` makes, as a query. */
-function siteVisitWhere(summary: VisitSummary | undefined): Prisma.ValuationCaseWhereInput {
-  switch (summary) {
-    case 'VERIFIED':
-      return { siteVisits: { some: { locationCheck: { in: ON_SITE } } } };
-    case 'FLAGGED':
-      return {
-        AND: [
-          { siteVisits: { some: {} } },
-          { siteVisits: { none: { locationCheck: { in: ON_SITE } } } },
-        ],
-      };
-    case 'NONE':
-      // "Not visited" means a valuator has the case and has not been out; a
-      // request still waiting for assignment is not overdue a visit.
-      return { makerId: { not: null }, siteVisits: { none: {} } };
-    default:
-      return {};
-  }
 }
 
 export async function listCases(actor: Actor, filter: CaseListFilter = {}) {
@@ -274,7 +248,6 @@ export async function listCases(actor: Actor, filter: CaseListFilter = {}) {
       filter.mineOnly ? { OR: [{ makerId: actor.id }, { checkerId: actor.id }] } : {},
       filter.discipline ? { discipline: filter.discipline } : {},
       filter.requestTypeCode ? { requestType: { code: filter.requestTypeCode } } : {},
-      siteVisitWhere(filter.siteVisit),
       search
         ? {
             // Section 24: a case is found by its number, its people, or the
@@ -332,7 +305,6 @@ export async function listCases(actor: Actor, filter: CaseListFilter = {}) {
         maker: { select: { fullName: true } },
         checker: { select: { fullName: true } },
         slaRecord: { select: { status: true, dueAt: true } },
-        siteVisits: { select: { locationCheck: true } },
       },
     }),
     prisma.valuationCase.count({ where }),
@@ -410,11 +382,6 @@ async function buildGuardContext(
   // One after another, not in parallel: a transaction is one connection, and
   // pg does not allow overlapping queries on a connection.
   const openCorrections = await tx.correctionCycle.count({ where: { caseId, resolvedAt: null } });
-  // Top-level review comments only: a reply is part of its thread, and the
-  // thread is resolved or not as a whole.
-  const unresolvedComments = await tx.comment.count({
-    where: { caseId, isResolved: false, parentId: null },
-  });
   const signedReport = await tx.report.findFirst({
     where: { caseId, isImmutable: true },
     select: { id: true },
@@ -433,8 +400,8 @@ async function buildGuardContext(
   const present = new Set(documents.map((d) => d.categoryId));
   const hasRequiredDocuments = mandatoryCategories.every((c) => present.has(c.id));
 
-  // Not merely "a figure exists": the stored calculation is re-run and must
-  // reproduce itself, so a tampered or out-of-date figure cannot move on.
+  // Not merely "a figure exists": the figures must match the valuator's stored
+  // entry, so a tampered or out-of-date figure cannot move on.
   const calculationComplete = await verifyCurrentValuation(tx, caseId);
 
   // Only approvals given since the case last came back from correction count:
@@ -466,22 +433,7 @@ async function buildGuardContext(
     approvalChain = resolveRouting(thresholds, finalValue).approvalChain;
   }
 
-  // Off unless an administrator switches it on. When on, a case goes to
-  // checking only with a visit checked in at the property, or with a visit
-  // whose remarks explain why it could not be (GPS failed, access refused).
   const minCommentLength = await getNumberConfig('comment.min_length', 10);
-  const siteVisitRequired = (await getNumberConfig('site_visit.require_on_site', 0)) === 1;
-  const siteVisitEvidence =
-    !siteVisitRequired ||
-    (
-      await tx.siteVisit.findMany({
-        where: { caseId },
-        select: { locationCheck: true, remarks: true },
-      })
-    ).some(
-      (v) =>
-        ON_SITE_CHECKS.has(v.locationCheck) || (v.remarks?.trim().length ?? 0) >= minCommentLength,
-    );
 
   const retentionDays = await getNumberConfig('archive.retention_days_before_archive', 30);
   const completedAt = await tx.valuationCase.findUnique({
@@ -497,14 +449,12 @@ async function buildGuardContext(
     hasRequiredDocuments,
     calculationComplete,
     openCorrectionCount: openCorrections,
-    unresolvedCommentCount: unresolvedComments,
     hasSignedReport: signedReport !== null,
     reauthenticatedWithinWindow,
     retentionElapsed,
     approvedRoles,
     approvalChain,
     minCommentLength,
-    siteVisitEvidence,
   };
 }
 
@@ -687,8 +637,8 @@ export async function performTransition(
     }
 
     // --- Review comments (section 33) --------------------------------------
-    // The first comment of a review is the transition itself; later ones are
-    // added directly while the case stays COMMENTED (review-service).
+    // A review comment is recorded with the transition itself. The case page
+    // no longer offers it; a checker returns the case with a comment instead.
     if (outcome.definition.action === 'ADD_CHECKER_COMMENT' && outcome.comment) {
       await tx.comment.create({
         data: {

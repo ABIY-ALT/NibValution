@@ -808,9 +808,8 @@ const PARAMETERS = [
 ].map((p) => ({ ...p, type: 'TABLE', discipline: 'CIVIL', notes: `Guideline ${version} reference table. Published with the guideline release, not edited by hand.` }));
 
 // The corrections to the workbook's known issues (CALCULATION_SPEC section 11).
-// Each is off, so the engine reproduces the Excel figures until the valuation
-// unit approves a correction and an administrator switches it on. The names
-// are the keys of EXCEL_FIXES in src/server/domain/valuation/civil/guideline.ts.
+// Each is off, so the figures match the Excel workbook until the valuation
+// unit approves a correction and an administrator switches it on.
 PARAMETERS.push({
   key: 'excel_fixes.switches',
   name: 'Corrections to the Excel workbook',

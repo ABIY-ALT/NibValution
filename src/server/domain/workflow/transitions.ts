@@ -44,15 +44,13 @@ export type TransitionGuard =
   | 'CALCULATION_COMPLETE'
   | 'REQUIRED_DOCUMENTS_PRESENT'
   | 'NO_OPEN_CORRECTION'
-  | 'ALL_COMMENTS_RESOLVED'
   | 'CHECKER_DIFFERENT_FROM_MAKER'
   | 'DISCIPLINE_MATCHES'
   | 'APPROVAL_LEVEL_REACHED'
   | 'RECENT_REAUTHENTICATION'
   | 'SIGNED_REPORT_EXISTS'
   | 'RETENTION_ELAPSED'
-  | 'NOT_APPROVED_YET'
-  | 'SITE_VISIT_EVIDENCE';
+  | 'NOT_APPROVED_YET';
 
 export interface TransitionDefinition {
   readonly action: WorkflowAction;
@@ -165,12 +163,7 @@ export const TRANSITIONS: readonly TransitionDefinition[] = [
     permission: PERMISSIONS.VALUATION_SUBMIT,
     roles: ['MAKER'],
     scope: ['SELF_MAKER'],
-    guards: [
-      'CALCULATION_COMPLETE',
-      'REQUIRED_DOCUMENTS_PRESENT',
-      'NO_OPEN_CORRECTION',
-      'SITE_VISIT_EVIDENCE',
-    ],
+    guards: ['CALCULATION_COMPLETE', 'REQUIRED_DOCUMENTS_PRESENT', 'NO_OPEN_CORRECTION'],
     closesTask: 'PERFORM_VALUATION',
     opensTask: 'ASSIGN_CHECKER',
     description: 'Maker submits the completed valuation for checking.',
@@ -204,7 +197,7 @@ export const TRANSITIONS: readonly TransitionDefinition[] = [
     permission: PERMISSIONS.VALUATION_CHECK,
     roles: ['CHECKER'],
     scope: ['SELF_CHECKER'],
-    guards: ['ALL_COMMENTS_RESOLVED', 'CALCULATION_COMPLETE'],
+    guards: ['CALCULATION_COMPLETE'],
     closesTask: 'PERFORM_CHECKING',
     opensTask: 'GENERATE_COVER_PAGE',
     description:

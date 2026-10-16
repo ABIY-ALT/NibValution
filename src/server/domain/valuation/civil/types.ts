@@ -1,128 +1,19 @@
 import type { ConstructionStatus, LandHoldingRight } from '../../shared/enums';
-import type { ForcedSaleOverride, ForcedSaleResult, WeightOverride } from '../common';
-import type { ExcelFixes, LocationUse, RateClass } from './guideline';
+import type { ForcedSaleResult } from '../common';
 
 /**
- * What the civil engine is given and what it returns.
+ * The output of the guideline formula (`civil-2.0.0`): land priced by location
+ * zone and plot-size tiers, buildings from the guideline's component costs
+ * less recorded defects, site works, and the guideline's sale approach.
  *
- * Amounts, areas and percentages cross the boundary as strings, as everywhere
- * else in the valuation domain. Percentages are 0-100: a component that makes
- * up 30% of a building's walls is "30", not the 0.3 the Excel sheet stores.
+ * That formula no longer runs - the valuator now enters the figures - but the
+ * calculations it produced are still held on cases, and the signed reports
+ * frozen from them must go on rendering exactly as they were issued. Only the
+ * shape is kept, for the breakdown that reads it.
  */
 
-// ---------------------------------------------------------------------------
-// Input
-// ---------------------------------------------------------------------------
-
-/** HOME!E20-E26 and the location ratings of COST APPROACH!E404:E411. */
-export interface CivilLocationInput {
-  readonly city: string;
-  /** Permitted land purpose, e.g. RESIDENTIAL. */
-  readonly purpose: string;
-  /** Property type, e.g. Residential Building. */
-  readonly propertyType: string;
-  /** Asked only of a condominium or apartment unit. */
-  readonly floorLevel: number | null;
-  readonly utility: string;
-  readonly neighbourhood: string;
-  readonly roadQuality: string;
-  readonly roadWidth: string;
-  readonly proximity: string;
-  readonly accessibility: string;
-}
-
-export interface CivilLandInput {
-  readonly holdingRight: LandHoldingRight;
-  /** m², from the registered property. */
-  readonly plotArea: string | null;
-  readonly latitude: string | null;
-  readonly longitude: string | null;
-  readonly leaseRemainingYears: number | null;
-  readonly leaseTotalYears: number | null;
-  readonly leaseTotalAmount: string | null;
-  readonly leasePaidAmount: string | null;
-  /** The free-hold part of a plot held both ways, m². */
-  readonly freeholdArea: string | null;
-}
-
-export interface ComponentInput {
-  /** The component's row in the guideline catalogue for the building's type. */
-  readonly row: number;
-  readonly sharePercent: string;
-  /** How far the component is built; read only for a building under construction. */
-  readonly completionPercent: string | null;
-}
-
-export interface NewComponentInput {
-  readonly category: string;
-  readonly description: string | null;
-  /** ETB per m² of the building. */
-  readonly unitRate: string;
-  readonly sharePercent: string;
-  readonly completionPercent: string | null;
-}
-
-export interface DefectInput {
-  readonly code: number;
-  /** How much of the element is affected, 0-100. */
-  readonly percent: string;
-}
-
-export interface QuantityItemInput {
-  readonly item: string;
-  readonly quantity: string;
-  readonly completionPercent: string | null;
-}
-
-export interface CivilBuildingInput {
-  readonly buildingId: string;
-  readonly buildingNumber: number;
-  readonly name: string;
-  readonly constructionStatus: ConstructionStatus;
-  /** The registered completion, the default for each component of a building under construction. */
-  readonly progressPercent: string | null;
-  /** Total floor area of one building, m² (HOME column M). */
-  readonly floorArea: string | null;
-  /** Built-up (footprint) area of one building, m² (HOME column L). */
-  readonly builtUpArea: string | null;
-  /** The guideline building type that prices it, e.g. Villa. */
-  readonly costType: string;
-  /** Number of identical buildings (HOME column K). */
-  readonly count: string;
-  readonly heightM: string | null;
-  readonly components: readonly ComponentInput[];
-  readonly newComponents: readonly NewComponentInput[];
-  readonly defects: readonly DefectInput[];
-  readonly supplementary: readonly QuantityItemInput[];
-}
-
-export interface CivilWorkInput {
-  readonly item: string;
-  readonly description: string | null;
-  readonly quantity: string | null;
-  readonly completionPercent: string | null;
-  /** Internal length, width and depth in metres, for a swimming pool. */
-  readonly pool: { readonly length: string; readonly width: string; readonly depth: string } | null;
-}
-
-export interface CivilEngineInput {
-  /** YYYY-MM-DD. The caller uses it to pick the parameter set. */
-  readonly valuationDate: string;
-  readonly location: CivilLocationInput;
-  readonly land: CivilLandInput;
-  readonly buildings: readonly CivilBuildingInput[];
-  readonly siteWorks: {
-    readonly civil: readonly CivilWorkInput[];
-    readonly gasStation: readonly QuantityItemInput[];
-    readonly coffeeSite: readonly QuantityItemInput[];
-  };
-  readonly reconciliation: WeightOverride | null;
-  readonly forcedSale: ForcedSaleOverride | null;
-}
-
-// ---------------------------------------------------------------------------
-// Output
-// ---------------------------------------------------------------------------
+export type RateClass = 'R' | 'C' | 'I';
+export type LocationUse = 'Residential' | 'Commercial' | 'Industrial';
 
 export interface LocationFactorOutput {
   readonly key:
@@ -381,7 +272,10 @@ export interface ReconciliationOutput {
 
 export interface CivilEngineOutput {
   readonly formulaVersion: string;
-  readonly guideline: { readonly version: string; readonly fixes: ExcelFixes };
+  readonly guideline: {
+    readonly version: string;
+    readonly fixes: Readonly<Record<string, boolean>>;
+  };
   readonly mode: 'COMPLETED' | 'PROGRESS';
   readonly property: {
     readonly city: string;

@@ -5,7 +5,6 @@ import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button, type ButtonProps } from '@/components/ui/button';
 import { Input, Select, Textarea } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
 import type { WorkspaceActionState } from '@/server/actions/valuation-actions';
 
 export const INITIAL_STATE: WorkspaceActionState = { ok: false };
@@ -55,16 +54,14 @@ export interface FieldSpec {
   required?: boolean;
   hint?: string;
   placeholder?: string;
-  /** Columns spanned in the three-column grid. */
-  span?: 1 | 2 | 3;
-  /** Adds a unit after the label, e.g. `m²`. */
+  /** Adds a unit after the label, e.g. `ETB`. */
   unit?: string;
 }
 
 /**
- * The fields of a registration form, laid out on a three-column grid with each
- * field's validation message beneath it. Values come from `defaults`, so the
- * same spec serves "add" and "edit".
+ * The fields of a form, stacked one above another with each field's validation
+ * message beneath it - narrow enough for a side card. Values come from
+ * `defaults`, so the same spec serves "add" and "edit".
  */
 export function SpecFields({
   fields,
@@ -78,7 +75,7 @@ export function SpecFields({
   idPrefix: string;
 }) {
   return (
-    <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="space-y-4">
       {fields.map((field) => {
         const id = `${idPrefix}-${field.name}`;
         const error = state.fieldErrors?.[field.name]?.[0];
@@ -92,14 +89,7 @@ export function SpecFields({
           defaultValue: value === null || value === undefined ? '' : String(value),
         };
         return (
-          <div
-            key={field.name}
-            className={cn(
-              'min-w-0 space-y-1.5',
-              field.span === 2 && 'sm:col-span-2',
-              field.span === 3 && 'sm:col-span-2 lg:col-span-3',
-            )}
-          >
+          <div key={field.name} className="min-w-0 space-y-1.5">
             <label htmlFor={id} className="block text-[12px] font-semibold text-ink-2">
               {field.label}
               {field.unit ? <span className="font-normal text-ink-3"> ({field.unit})</span> : null}

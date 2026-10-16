@@ -50,7 +50,7 @@ export async function signApprovedValuation(
   if (!run) {
     throw new BusinessRuleError(
       'NO_CALCULATION',
-      'The approved valuation has no calculation to sign.',
+      'The approved valuation has no recorded figures to sign.',
     );
   }
 

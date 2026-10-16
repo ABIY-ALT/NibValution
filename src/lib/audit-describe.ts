@@ -67,7 +67,7 @@ const ACTIONS: Record<string, { category: AuditCategoryKey; label: string }> = {
   REPORT_DOWNLOADED: { category: 'document', label: 'Report downloaded' },
   SIGNATURE_APPLIED: { category: 'document', label: 'Report signed' },
   SIGNATURE_REVOKED: { category: 'document', label: 'Signature revoked' },
-  CALCULATION_PERFORMED: { category: 'valuation', label: 'Valuation calculated' },
+  CALCULATION_PERFORMED: { category: 'valuation', label: 'Valuation figures recorded' },
   VALUATION_VERSION_CREATED: { category: 'valuation', label: 'Valuation version saved' },
   CONFIGURATION_CHANGED: { category: 'settings', label: 'Setting changed' },
   CONFIG_UPDATE: { category: 'settings', label: 'System setting changed' },
@@ -478,7 +478,7 @@ export function describeAudit(record: AuditRecordInput, lookups: AuditLookups): 
         market ? `Market value ${formatCurrency(market)}` : null,
         parameterSet ? `using parameters ${parameterSet}` : null,
       ].filter(Boolean);
-      return result('Calculated the valuation', parts.length > 0 ? parts.join(' · ') : null);
+      return result('Recorded the valuation figures', parts.length > 0 ? parts.join(' · ') : null);
     }
 
     case 'VALUATION_VERSION_CREATED':

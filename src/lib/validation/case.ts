@@ -82,7 +82,5 @@ export const caseFilterSchema = z.object({
   discipline: z.enum(['CIVIL', 'MECHANICAL']).optional(),
   requestTypeCode: z.string().trim().max(40).optional(),
   search: z.string().trim().max(120).optional(),
-  /** Verified on site, visited but flagged, or assigned and not yet visited. */
-  siteVisit: z.enum(['VERIFIED', 'FLAGGED', 'NONE']).optional(),
   page: z.coerce.number().int().min(1).optional(),
 });

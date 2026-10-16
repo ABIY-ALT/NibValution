@@ -1,11 +1,10 @@
-import { z } from 'zod';
-
 /**
- * Checker review comments (spec section 33; roadmap Phase 4).
+ * The parts of a valuation a checker's review comment could be tagged with
+ * (spec section 33; roadmap Phase 4).
  *
- * A comment is tagged with the part of the valuation it concerns, so a return
- * for correction can record which sections were flagged and the maker can go
- * straight to them.
+ * Review comments are no longer raised, but correction cycles recorded before
+ * then still name the sections they flagged, and the case page shows them by
+ * these labels.
  */
 
 export const REVIEW_SECTIONS = [
@@ -34,24 +33,3 @@ export const REVIEW_SECTION_LABELS: Record<ReviewSection, string> = {
   DOCUMENTS: 'Documents',
   SITE_VISIT: 'Site visit',
 };
-
-export const raiseCommentSchema = z.object({
-  caseId: z.string().uuid(),
-  section: z.enum(REVIEW_SECTIONS),
-  body: z.string().trim().min(1, 'Write the comment.').max(4000),
-});
-export type RaiseCommentInput = z.infer<typeof raiseCommentSchema>;
-
-export const replyCommentSchema = z.object({
-  caseId: z.string().uuid(),
-  parentId: z.string().uuid(),
-  body: z.string().trim().min(2, 'Write a reply.').max(4000),
-});
-export type ReplyCommentInput = z.infer<typeof replyCommentSchema>;
-
-export const resolveCommentSchema = z.object({
-  caseId: z.string().uuid(),
-  commentId: z.string().uuid(),
-  resolved: z.enum(['true', 'false']).transform((v) => v === 'true'),
-});
-export type ResolveCommentInput = z.infer<typeof resolveCommentSchema>;

@@ -59,7 +59,6 @@ export interface GuardContext {
   readonly hasRequiredDocuments: boolean;
   readonly calculationComplete: boolean;
   readonly openCorrectionCount: number;
-  readonly unresolvedCommentCount: number;
   readonly hasSignedReport: boolean;
   readonly reauthenticatedWithinWindow: boolean;
   readonly retentionElapsed: boolean;
@@ -69,11 +68,6 @@ export interface GuardContext {
   readonly approvalChain: readonly RoleCode[];
   /** Minimum length a mandatory comment must reach, from configuration. */
   readonly minCommentLength: number;
-  /**
-   * The site-visit rule is satisfied: it is switched off, or a visit was
-   * checked in at the property, or an unverified visit explains why.
-   */
-  readonly siteVisitEvidence: boolean;
 }
 
 export interface TransitionOutcome {
@@ -303,7 +297,7 @@ function assertGuard(
       if (!context.calculationComplete) {
         throw new BusinessRuleError(
           'CALCULATION_INCOMPLETE',
-          'The valuation calculation is not complete, so the case cannot be submitted.',
+          'The valuation figures are not complete, so the case cannot be submitted.',
         );
       }
       return;
@@ -313,16 +307,6 @@ function assertGuard(
         throw new BusinessRuleError(
           'OPEN_CORRECTION',
           'An open correction must be resolved and resubmitted rather than submitted afresh.',
-        );
-      }
-      return;
-
-    case 'ALL_COMMENTS_RESOLVED':
-      if (context.unresolvedCommentCount > 0) {
-        throw new BusinessRuleError(
-          'UNRESOLVED_COMMENTS',
-          `${context.unresolvedCommentCount} comment(s) are still unresolved. ` +
-            'Resolve or withdraw them before completing the check.',
         );
       }
       return;
@@ -424,16 +408,6 @@ function assertGuard(
         throw new BusinessRuleError(
           'ALREADY_APPROVED',
           'An approved valuation is superseded by a new version, never cancelled.',
-        );
-      }
-      return;
-
-    case 'SITE_VISIT_EVIDENCE':
-      if (!context.siteVisitEvidence) {
-        throw new BusinessRuleError(
-          'SITE_VISIT_UNVERIFIED',
-          'Record a site visit checked in at the property, or explain in a visit’s remarks ' +
-            `(at least ${context.minCommentLength} characters) why it could not be verified.`,
         );
       }
       return;

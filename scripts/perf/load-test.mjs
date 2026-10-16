@@ -33,11 +33,11 @@ const JOURNEYS = {
     ['/notifications', 2], ['/archive', 1],
   ],
   MAKER: [
-    ['/dashboard', 2], ['/tasks', 3], ['/requests/:case', 4], ['/requests/:case/valuation', 3],
+    ['/dashboard', 2], ['/tasks', 3], ['/requests/:case', 4],
     ['/notifications', 1], ['/civil', 1], ['/mechanical?tab=vehicles', 1], ['/requests?search=:search', 1],
   ],
   CHECKER: [
-    ['/dashboard', 2], ['/tasks', 3], ['/requests/:case', 4], ['/requests/:case/valuation', 3],
+    ['/dashboard', 2], ['/tasks', 3], ['/requests/:case', 4],
     ['/notifications', 1],
   ],
   MAKER_MANAGER: [

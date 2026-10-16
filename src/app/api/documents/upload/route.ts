@@ -6,7 +6,6 @@ import { isAppError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
 import { serverEnv } from '@/lib/env';
 import { isSameOriginRequest } from '@/lib/http/same-origin';
-import { sitePhotoSchema } from '@/lib/validation/valuation';
 
 /**
  * Document upload.
@@ -71,36 +70,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // A photo taken on a site visit names its visit and carries the phone's
-    // position at the moment it was sent.
-    let sitePhoto = null;
-    if (form.has('siteVisitId')) {
-      const field = (name: string) => {
-        const value = form.get(name);
-        return typeof value === 'string' ? value : undefined;
-      };
-      const parsed = sitePhotoSchema.safeParse({
-        siteVisitId: field('siteVisitId'),
-        latitude: field('latitude'),
-        longitude: field('longitude'),
-        accuracyMeters: field('accuracyMeters'),
-      });
-      if (!parsed.success) {
-        return NextResponse.json(
-          { code: 'BAD_REQUEST', detail: parsed.error.issues[0]?.message ?? 'Invalid site photo.' },
-          { status: 400 },
-        );
-      }
-      const { siteVisitId, latitude, longitude, accuracyMeters } = parsed.data;
-      sitePhoto = {
-        siteVisitId,
-        position:
-          latitude !== null && longitude !== null && accuracyMeters !== null
-            ? { latitude, longitude, accuracyMeters }
-            : null,
-      };
-    }
-
     // Each file is validated and scanned on its own, so one bad file in a
     // multi-file drop does not discard the good ones.
     const uploaded: unknown[] = [];
@@ -120,7 +89,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               bytes,
               description: description ? String(description) : null,
               supersedesId: supersedesId ? String(supersedesId) : null,
-              sitePhoto,
             },
             ctx,
           ),

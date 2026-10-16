@@ -35,11 +35,7 @@ export default async function RequestsPage({
 
   const result = await listCases(actor, { ...filter, pageSize: LIST_PAGE_SIZE });
   const canCreate = actor.permissions.has(PERMISSIONS.CASE_CREATE);
-  // The same permission that shows visits on the case page.
-  const showSiteVisit = actor.permissions.has(PERMISSIONS.VALUATION_READ);
-  const isFiltered = Boolean(
-    filter.search || filter.status || filter.discipline || filter.siteVisit,
-  );
+  const isFiltered = Boolean(filter.search || filter.status || filter.discipline);
 
   return (
     <div className="space-y-6">
@@ -88,28 +84,16 @@ export default async function RequestsPage({
             <option value="MECHANICAL">Mechanical</option>
           </Select>
         </Field>
-
-        {showSiteVisit ? (
-          <Field label="Site visit" htmlFor="siteVisit" className="w-full sm:w-48">
-            <Select id="siteVisit" name="siteVisit" defaultValue={filter.siteVisit ?? ''}>
-              <option value="">Any</option>
-              <option value="VERIFIED">Verified on site</option>
-              <option value="FLAGGED">Flagged</option>
-              <option value="NONE">Not visited yet</option>
-            </Select>
-          </Field>
-        ) : null}
       </FilterBar>
 
       <CaseTable
         title="Case register"
         meta={<Badge variant="default">{result.rows.length} shown</Badge>}
         rows={result.rows}
-        showSiteVisit={showSiteVisit}
         emptyTitle={isFiltered ? 'No matching cases' : 'No requests yet'}
         emptyMessage={
           isFiltered
-            ? 'No cases match these filters. Try widening the status, discipline or site visit.'
+            ? 'No cases match these filters. Try widening the status or discipline.'
             : 'No valuation requests have been raised yet.'
         }
         emptyAction={

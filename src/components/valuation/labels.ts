@@ -1,30 +1,11 @@
-import type {
-  ConditionGrade,
-  ConstructionStatus,
-  LandHoldingRight,
-} from '@/server/domain/shared/enums';
+import type { ConstructionStatus } from '@/server/domain/shared/enums';
 
-/** Display names for the valuation enums, shared by every workspace form. */
-
-export const HOLDING_LABELS: Record<LandHoldingRight, string> = {
-  FREEHOLD: 'Freehold',
-  LEASE: 'Lease',
-  BOTH: 'Freehold and lease',
-};
+/** Display names and formats for the working a signed report shows. */
 
 export const CONSTRUCTION_LABELS: Record<ConstructionStatus, string> = {
   COMPLETED: 'Completed',
   UNDER_CONSTRUCTION: 'Under construction',
   ABANDONED: 'Abandoned',
-};
-
-export const CONDITION_LABELS: Record<ConditionGrade, string> = {
-  EXCELLENT: 'Excellent',
-  VERY_GOOD: 'Very good',
-  GOOD: 'Good',
-  FAIR: 'Fair',
-  POOR: 'Poor',
-  SCRAP: 'Scrap',
 };
 
 export const METHOD_LABELS: Record<string, string> = {

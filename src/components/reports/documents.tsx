@@ -3,6 +3,7 @@ import { WorkingTables } from '@/components/valuation/valuation-breakdown';
 import { formatAmount, formatCurrency } from '@/lib/money';
 import { cn } from '@/lib/utils';
 import { SITE_VISIT_CHECKS, type SiteVisitCheck } from '@/server/domain/shared/enums';
+import { isEnteredOutput } from '@/server/domain/valuation/calculation';
 import {
   SiteVisitCheckBadge,
   photoLocation,
@@ -380,10 +381,15 @@ export function ValuationReportDocument({
 
       <SiteInspection visits={arr(doc.siteInspection)} />
 
-      <Heading>Working</Heading>
-      <div className="text-[12px] [&_table]:min-w-0!">
-        <WorkingTables engine={engine} output={calc.output} expanded />
-      </div>
+      {/* Entered figures have no working; a report frozen from a calculation keeps its own. */}
+      {isEnteredOutput(calc.output) ? null : (
+        <>
+          <Heading>Working</Heading>
+          <div className="text-[12px] [&_table]:min-w-0!">
+            <WorkingTables engine={engine} output={calc.output} expanded />
+          </div>
+        </>
+      )}
 
       <Heading>Approvals</Heading>
       <ul className="space-y-1 text-[12.5px]">
@@ -407,7 +413,7 @@ export function ValuationReportDocument({
           ['Status', signatureStatus],
           ['Parameter set', str(v.parameterSet)],
           [
-            'Calculation',
+            isEnteredOutput(calc.output) ? 'Valuation entry' : 'Calculation',
             str(calc.inputHash) ? `fingerprint ${str(calc.inputHash)?.slice(0, 16)}…` : null,
           ],
         ]}

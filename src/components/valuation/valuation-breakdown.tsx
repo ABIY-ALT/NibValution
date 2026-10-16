@@ -1,76 +1,29 @@
-import { Fingerprint, Info, ShieldCheck, TriangleAlert } from 'lucide-react';
 import type {
   CivilBuildingOutput,
   CivilEngineOutput,
-} from '@/server/domain/valuation/civil-engine';
-import type { PricedItemOutput } from '@/server/domain/valuation/civil/types';
+  PricedItemOutput,
+} from '@/server/domain/valuation/civil/types';
 import {
   isLegacyCivilOutput,
   type LegacyCivilEngineOutput,
 } from '@/server/domain/valuation/civil-legacy';
-import type { MechanicalEngineOutput } from '@/server/domain/valuation/mechanical-engine';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import type { MechanicalEngineOutput } from '@/server/domain/valuation/mechanical-legacy';
+import { isEnteredOutput } from '@/server/domain/valuation/calculation';
 import { dec } from '@/lib/money';
 import { cn } from '@/lib/utils';
 import { CONSTRUCTION_LABELS, METHOD_LABELS, etb, humaniseKey, trimDecimal } from './labels';
 
 /**
- * The full working of a calculation, rendered from the stored run's output
- * (spec section 9: input, formula, rate, quantity, amount, adjustment,
- * depreciation, final value). It reads the snapshot, never the live property,
- * so it always shows exactly what was calculated - and it is the same data
- * a recomputation is checked against.
+ * The working of a valuation, as a signed report shows it, rendered from the
+ * stored run's output - never the live case, so it always shows exactly what
+ * was signed.
+ *
+ * A run is either the valuator's entry - two figures, with no working - or, for
+ * a case valued before the calculation engines were retired, the full working
+ * of the engine (spec section 9: input, formula, rate, quantity, amount,
+ * adjustment, depreciation, final value). Reports signed from such a run go on
+ * rendering that working exactly as issued.
  */
-
-export interface BreakdownRun {
-  engine: 'CIVIL' | 'MECHANICAL';
-  output: unknown;
-  performedAt: Date;
-  performedBy: string;
-  formulaVersion: string;
-  parameterSet: string | null;
-  inputHash: string;
-  current: boolean;
-}
-
-const STAMP = new Intl.DateTimeFormat('en-GB', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-  timeZone: 'UTC',
-});
-
-function Figure({
-  label,
-  value,
-  caption,
-  tone = 'default',
-}: {
-  label: string;
-  value: string;
-  caption?: string;
-  tone?: 'brand' | 'default';
-}) {
-  return (
-    <div
-      className={cn(
-        'rounded-(--radius-card) p-5',
-        tone === 'brand' ? 'bg-nib-gold-500/12' : 'bg-surface-2',
-      )}
-    >
-      <p className="text-[12.5px] font-medium text-ink-2">{label}</p>
-      <p
-        className={cn(
-          'mt-1 text-[28px] font-bold leading-tight tracking-tight',
-          tone === 'brand' ? 'text-nib-gold-800 dark:text-nib-gold-400' : 'text-ink',
-        )}
-      >
-        <span className="mr-1.5 text-[14px] font-semibold text-ink-3">ETB</span>
-        {etb(value)}
-      </p>
-      {caption ? <p className="mt-1 text-[12px] text-ink-3">{caption}</p> : null}
-    </div>
-  );
-}
 
 function Formula({ children }: { children: React.ReactNode }) {
   return <span className="mt-0.5 block text-[11.5px] leading-relaxed text-ink-3">{children}</span>;
@@ -738,6 +691,8 @@ export function WorkingTables({
   /** Open each building's component working, for a printed report. */
   expanded?: boolean;
 }) {
+  // Entered figures have no working to show.
+  if (isEnteredOutput(output)) return null;
   const legacy = engine === 'CIVIL' && isLegacyCivilOutput(output) ? output : null;
   const civil = engine === 'CIVIL' && !legacy ? (output as CivilEngineOutput) : null;
   const mechanical = engine === 'MECHANICAL' ? (output as MechanicalEngineOutput) : null;
@@ -772,107 +727,6 @@ export function WorkingTables({
           ) : null}
         </div>
       </section>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// The whole
-// ---------------------------------------------------------------------------
-
-export function ValuationBreakdown({
-  run,
-  stale,
-  verified,
-}: {
-  run: BreakdownRun;
-  stale: boolean;
-  /** Whether re-running the stored calculation reproduces it (the checking guard's test). */
-  verified?: boolean;
-}) {
-  const output = run.output as CivilEngineOutput | LegacyCivilEngineOutput | MechanicalEngineOutput;
-  const reconciliation = output.reconciliation;
-
-  return (
-    <div className="space-y-6">
-      {verified ? (
-        <div className="flex items-start gap-3 rounded-(--radius-control) bg-st-done-bg px-4 py-3 text-[13px] text-ink">
-          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-st-done" aria-hidden="true" />
-          <p>
-            <span className="font-semibold">Verified.</span> Re-running the stored inputs with the
-            stored parameters reproduces these figures exactly, and they match the case.
-          </p>
-        </div>
-      ) : verified === false && !stale && run.current ? (
-        <Alert variant="destructive">
-          <TriangleAlert aria-hidden="true" />
-          <AlertTitle>These figures do not verify</AlertTitle>
-          <AlertDescription>
-            Re-running the stored calculation does not reproduce the figures held on the case.
-            Recalculate, and report it if it happens again.
-          </AlertDescription>
-        </Alert>
-      ) : null}
-      {stale ? (
-        <Alert variant="warning">
-          <TriangleAlert aria-hidden="true" />
-          <AlertTitle>The property changed after this calculation</AlertTitle>
-          <AlertDescription>
-            These figures were cleared from the case. Recalculate before submitting it for checking.
-          </AlertDescription>
-        </Alert>
-      ) : null}
-      {!run.current ? (
-        <Alert variant="warning">
-          <TriangleAlert aria-hidden="true" />
-          <AlertTitle>Calculated by an earlier version of the formulas</AlertTitle>
-          <AlertDescription>Recalculate so the figures can be verified.</AlertDescription>
-        </Alert>
-      ) : null}
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Figure
-          label="Market value"
-          value={output.marketValue}
-          tone="brand"
-          caption={reconciliation.formula}
-        />
-        <Figure
-          label="Forced-sale value"
-          value={output.forcedSaleValue}
-          caption={`${trimDecimal(output.forcedSale.percent)}% of market value${
-            output.forcedSale.isOverridden ? ' - overridden by the valuator' : ''
-          }`}
-        />
-      </div>
-
-      {output.notes.length > 0 ? (
-        <Alert variant="info">
-          <Info aria-hidden="true" />
-          <AlertTitle>For the checker&apos;s attention</AlertTitle>
-          <AlertDescription>
-            <ul className="list-disc pl-4">
-              {output.notes.map((note) => (
-                <li key={note}>{note}</li>
-              ))}
-            </ul>
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      <WorkingTables engine={run.engine} output={output} />
-
-      <footer className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-line pt-4 text-[12px] text-ink-3">
-        <span>
-          Calculated by {run.performedBy}, {STAMP.format(run.performedAt)} UTC
-        </span>
-        <span>Parameters {run.parameterSet ?? '—'}</span>
-        <span>Formula {run.formulaVersion}</span>
-        <span className="inline-flex items-center gap-1.5" title={run.inputHash}>
-          <Fingerprint className="h-3.5 w-3.5" aria-hidden="true" />
-          {run.inputHash.slice(0, 12)}
-        </span>
-      </footer>
     </div>
   );
 }

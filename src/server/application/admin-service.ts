@@ -885,56 +885,16 @@ export async function updateThresholdChain(
 // Valuation parameters
 // ---------------------------------------------------------------------------
 
-/** Keys under this prefix are published with a guideline release, never edited by hand. */
-const GUIDELINE_PREFIX = 'guideline.';
-
-function isGuidelineKey(key: string): boolean {
-  return key.startsWith(GUIDELINE_PREFIX);
-}
-
 export async function listParameterSets(actor: Actor) {
   assertPermission(actor, PERMISSIONS.PARAMETER_UPDATE);
 
-  const sets = await prisma.valuationParameterSet.findMany({
+  return prisma.valuationParameterSet.findMany({
     orderBy: [{ code: 'asc' }, { version: 'desc' }],
     include: {
-      parameters: {
-        where: { NOT: { key: { startsWith: GUIDELINE_PREFIX } } },
-        orderBy: { key: 'asc' },
-      },
+      parameters: { orderBy: { key: 'asc' } },
       _count: { select: { valuations: true } },
     },
   });
-
-  // The guideline tables are listed by name only. They run to most of a
-  // megabyte per version and are published whole by a guideline release, so
-  // the register shows that they are there, not their thousand rows.
-  const guidelineTables = await prisma.valuationParameter.findMany({
-    where: { key: { startsWith: GUIDELINE_PREFIX } },
-    orderBy: { key: 'asc' },
-    select: {
-      id: true,
-      setId: true,
-      key: true,
-      name: true,
-      type: true,
-      numericValue: true,
-      unit: true,
-      discipline: true,
-      categoryCode: true,
-      notes: true,
-    },
-  });
-
-  return sets.map((set) => ({
-    ...set,
-    parameters: [
-      ...set.parameters,
-      ...guidelineTables
-        .filter((table) => table.setId === set.id)
-        .map((table) => ({ ...table, jsonValue: null as Prisma.JsonValue | null })),
-    ],
-  }));
 }
 
 const NUMERIC_TEXT = /^-?\d+(\.\d+)?$/;
@@ -995,15 +955,6 @@ export async function publishParameterVersion(
   ctx: AuditContextInput,
 ): Promise<{ id: string; version: number }> {
   assertPermission(actor, PERMISSIONS.PARAMETER_UPDATE);
-
-  // A guideline table is a thousand nested rows published whole by a guideline
-  // release; this form edits flat tables and would flatten it.
-  if (isGuidelineKey(input.key)) {
-    throw new BusinessRuleError(
-      'PARAMETER_READ_ONLY',
-      `"${input.key}" is a guideline reference table. It is published with a guideline release and cannot be added or changed here.`,
-    );
-  }
 
   const effectiveFrom = new Date(`${input.effectiveFrom}T00:00:00.000Z`);
   if (effectiveFrom < startOfUtcDay(new Date())) {

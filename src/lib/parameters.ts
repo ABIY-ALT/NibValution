@@ -56,27 +56,7 @@ const AREAS: Record<string, { title: string; blurb: string; order: number }> = {
     blurb: 'The value used when a property must be sold quickly, e.g. on foreclosure.',
     order: 7,
   },
-  excel_fixes: {
-    title: 'Workbook corrections',
-    blurb:
-      'Known issues in the Excel estimation template. Each is corrected only when switched on here.',
-    order: 8,
-  },
-  guideline: {
-    title: 'Valuation guideline tables',
-    blurb:
-      'Rates, factors and lists from the guideline, read by the civil engine. Published with a guideline release.',
-    order: 9,
-  },
 };
-
-/**
- * A guideline reference table: a `guideline.*` parameter, published whole by a
- * guideline release. The register lists it but does not open it for editing.
- */
-export function isGuidelineTable(key: string): boolean {
-  return key.startsWith('guideline.');
-}
 
 export function parameterArea(key: string): {
   id: string;

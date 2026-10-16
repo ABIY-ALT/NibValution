@@ -38,7 +38,6 @@ import {
   formatNumericParameter,
   formatTableValue,
   humanizeEntry,
-  isGuidelineTable,
   isUnconfirmed,
   parameterArea,
   tableEntries,
@@ -135,16 +134,6 @@ function changesBetween(newer: ParameterSet, older: ParameterSet | undefined): s
 }
 
 function ParameterValue({ parameter }: { parameter: Parameter }) {
-  if (isGuidelineTable(parameter.key)) {
-    return (
-      <div className="space-y-1.5">
-        <span className="block text-[12.5px] text-ink-2">Reference table</span>
-        <Badge size="sm" title="Published with a guideline release; not edited here.">
-          Guideline
-        </Badge>
-      </div>
-    );
-  }
   const numeric = numericText(parameter);
   const entries = tableEntries(parameter.jsonValue);
 
@@ -204,9 +193,7 @@ export default async function ParametersPage() {
     earliestDate: isoDay(latest.effectiveFrom) > today ? isoDay(latest.effectiveFrom) : today,
   }));
   const existing = groups.flatMap(({ code, latest }) =>
-    latest.parameters
-      .filter((parameter) => !isGuidelineTable(parameter.key))
-      .map((parameter) => toOption(parameter, code)),
+    latest.parameters.map((parameter) => toOption(parameter, code)),
   );
 
   const provisionalCount = groups
@@ -303,8 +290,7 @@ export default async function ParametersPage() {
           <AlertDescription>
             Values marked <strong>Provisional</strong> were set as working assumptions and have not
             yet been confirmed by the Property Valuation Department. Treat figures that depend on
-            them as provisional until they are confirmed. Civil property rates and factors are not
-            among them: they come from the valuation guideline tables.
+            them as provisional until they are confirmed.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -444,17 +430,11 @@ export default async function ParametersPage() {
                                 </TD>
                                 <TD className="align-top">
                                   <div className="flex justify-end">
-                                    {isGuidelineTable(parameter.key) ? (
-                                      <span className="text-[11.5px] text-ink-3">
-                                        Guideline release
-                                      </span>
-                                    ) : (
-                                      <ParameterDialog
-                                        sets={setOptions}
-                                        existing={[]}
-                                        editing={toOption(editable, code)}
-                                      />
-                                    )}
+                                    <ParameterDialog
+                                      sets={setOptions}
+                                      existing={[]}
+                                      editing={toOption(editable, code)}
+                                    />
                                   </div>
                                 </TD>
                               </TR>

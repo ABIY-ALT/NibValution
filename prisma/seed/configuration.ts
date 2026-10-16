@@ -1,6 +1,5 @@
 import { Prisma } from '@prisma/client';
 import type { PrismaClient } from '@prisma/client';
-import guidelineTables from './guideline/v4.2.json';
 
 /**
  * Seeds every business rule that spec section 37 requires to be configurable.
@@ -258,7 +257,7 @@ const VALUATION_PARAMETERS: readonly ParamSeed[] = [
     numericValue: '60',
     unit: '%',
     notes:
-      'Default weighting for mechanical items. Must sum to 100 with the sales weight. Civil properties take the guideline weights (guideline.reconciliation). Awaiting PVD confirmation (assumption 3.2).',
+      'Default weighting for mechanical items. Must sum to 100 with the sales weight. Awaiting PVD confirmation (assumption 3.2).',
   },
   {
     key: 'reconciliation.sales_weight',
@@ -275,15 +274,14 @@ const VALUATION_PARAMETERS: readonly ParamSeed[] = [
     numericValue: '75',
     unit: '%',
     notes:
-      'Applied to the market value of mechanical items. Civil properties take the guideline percentage for the city and land purpose (guideline.foreclosure). Awaiting PVD confirmation (assumption 3.4).',
+      'Applied to the market value of mechanical items. Awaiting PVD confirmation (assumption 3.4).',
   },
   {
     key: 'cost_approach.mcf',
     name: 'MCF (market/cost correction factor)',
     type: 'FACTOR',
     numericValue: '1.000000',
-    notes:
-      'No longer read: the civil engine takes the market condition factor for the city and land purpose from the guideline table guideline.cities.',
+    notes: 'No longer read: valuation figures are entered by the valuator.',
   },
   {
     key: 'depreciation.method',
@@ -314,8 +312,7 @@ const VALUATION_PARAMETERS: readonly ParamSeed[] = [
       CORRUGATED_SHEET: 20,
       DEFAULT: 50,
     },
-    notes:
-      'No longer read: the civil engine depreciates a building by its recorded condition defects (guideline.condition_defects). Mechanical items use mechanical.economic_life.',
+    notes: 'No longer read: valuation figures are entered by the valuator.',
   },
   {
     key: 'depreciation.condition_modifiers',
@@ -375,23 +372,8 @@ const VALUATION_PARAMETERS: readonly ParamSeed[] = [
     type: 'TABLE',
     discipline: 'CIVIL',
     jsonValue: { basis: 'REMAINING_TERM', includeUnpaidLeaseBalance: true },
-    notes:
-      'No longer read: the civil engine values lease-held land by the guideline rule (guideline.location_value).',
+    notes: 'No longer read: valuation figures are entered by the valuator.',
   },
-  // The valuation guideline's reference tables and the switches that correct
-  // the Excel workbook's known issues, as scripts/guideline/build-tables.mjs
-  // builds them. The same file fills migration 20261009120000 for a database
-  // that already exists; this is the copy a fresh install starts from.
-  ...(guidelineTables as { key: string; name: string; notes: string; value: unknown }[]).map(
-    (table): ParamSeed => ({
-      key: table.key,
-      name: table.name,
-      type: 'TABLE',
-      discipline: 'CIVIL',
-      jsonValue: table.value as Prisma.InputJsonValue,
-      notes: table.notes,
-    }),
-  ),
 ];
 
 // ---------------------------------------------------------------------------

@@ -247,6 +247,38 @@ describeIfDb('valuation workflow', () => {
       ).rejects.toThrow(BusinessRuleError);
     });
 
+    describe('on behalf of a requesting branch or department', () => {
+      const request = { requestTypeCode: 'NEW', discipline: 'CIVIL' as const, applicantName: 'A', ownerName: 'B' };
+
+      it('files a department user’s request under the branch they choose', async () => {
+        const raiser = await makeActor('raiser', ['PROCESS_OWNER'], { departmentId: created.deptId });
+        const result = await createCase(raiser, { ...request, requestingOrgId: created.orgId }, CTX);
+        created.caseIds.push(result.id);
+
+        const record = await getCase(raiser, result.id);
+        expect(record.requestingOrgId).toBe(created.orgId);
+        // The raiser still sees, and acts on, the requests they raised.
+        const list = await listCases(raiser, {});
+        expect(list.rows.some((row) => row.id === result.id)).toBe(true);
+      });
+
+      it('requires a department user to name the requester', async () => {
+        const raiser = await makeActor('raiser2', ['PROCESS_OWNER'], { departmentId: created.deptId });
+        await expect(createCase(raiser, request, CTX)).rejects.toThrow(
+          /Choose the branch or department requesting this valuation/,
+        );
+      });
+
+      it('keeps a branch raiser to their own unit', async () => {
+        const headOffice = await prisma.organization.findFirstOrThrow({
+          where: { type: 'HEAD_OFFICE_UNIT', isActive: true },
+        });
+        await expect(
+          createCase(owner, { ...request, requestingOrgId: headOffice.id }, CTX),
+        ).rejects.toThrow(/filed under that unit/);
+      });
+    });
+
     it('refuses creation by a role without case:create', async () => {
       await expect(
         createCase(

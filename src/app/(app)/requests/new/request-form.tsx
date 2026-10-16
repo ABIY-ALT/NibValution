@@ -20,6 +20,21 @@ export interface RequestTypeOption {
   requiresPriorCase: boolean;
 }
 
+/** The requesting unit: chosen by the raiser, or fixed to their own branch or district. */
+export type RequestingUnitOptions =
+  | {
+      choose: true;
+      ownUnit: null;
+      units: { id: string; name: string; type: 'BRANCH' | 'DISTRICT' | 'HEAD_OFFICE_UNIT' }[];
+    }
+  | { choose: false; ownUnit: string; units: never[] };
+
+const UNIT_GROUPS = [
+  { type: 'BRANCH', label: 'Branches' },
+  { type: 'DISTRICT', label: 'Districts' },
+  { type: 'HEAD_OFFICE_UNIT', label: 'Head office departments and units' },
+] as const;
+
 function Submit() {
   const { pending } = useFormStatus();
   return (
@@ -95,12 +110,20 @@ function Section({
 /**
  * The request-intake form.
  *
- * It collects only what the requesting unit actually knows. Case number,
- * status, department and requesting organisation are all derived on the server
- * - accepting them here would let a branch file a case against another unit, or
- * open one directly in an approved state.
+ * Valuation Department staff raise a request on behalf of the branch or
+ * department asking for it, so they choose that requesting unit here; a raiser
+ * who sits in a branch or district files under their own unit, which the
+ * server enforces. Case number, status and department are derived on the
+ * server - accepting them here would let a case open directly in an approved
+ * state.
  */
-export function RequestForm({ requestTypes }: { requestTypes: RequestTypeOption[] }) {
+export function RequestForm({
+  requestTypes,
+  requesting,
+}: {
+  requestTypes: RequestTypeOption[];
+  requesting: RequestingUnitOptions;
+}) {
   const [state, formAction] = useActionState(createCaseAction, initialState);
   const [typeCode, setTypeCode] = useState(requestTypes[0]?.code ?? '');
 
@@ -126,6 +149,39 @@ export function RequestForm({ requestTypes }: { requestTypes: RequestTypeOption[
         ) : null}
 
         <Section title="Request" icon={FileText} className="sm:grid-cols-2">
+          {requesting.choose ? (
+            <Field
+              name="requestingOrgId"
+              label="Requesting branch / department"
+              required
+              errors={err?.requestingOrgId}
+              hint="The branch or department asking for this valuation. It is recorded on the case and its documents."
+              className="sm:col-span-2"
+            >
+              <Select id="requestingOrgId" name="requestingOrgId" required defaultValue="">
+                <option value="" disabled>
+                  — Choose the requester —
+                </option>
+                {UNIT_GROUPS.map((group) => {
+                  const items = requesting.units.filter((u) => u.type === group.type);
+                  return items.length > 0 ? (
+                    <optgroup key={group.type} label={group.label}>
+                      {items.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null;
+                })}
+              </Select>
+            </Field>
+          ) : (
+            <p className="rounded-(--radius-control) border border-line bg-surface-2/60 px-3.5 py-2.5 text-[12.5px] text-ink-2 sm:col-span-2">
+              Requesting unit: <span className="font-semibold text-ink">{requesting.ownUnit}</span>
+            </p>
+          )}
+
           <Field name="requestTypeCode" label="Request type" required errors={err?.requestTypeCode}>
             <Select
               id="requestTypeCode"
@@ -254,7 +310,7 @@ export function RequestForm({ requestTypes }: { requestTypes: RequestTypeOption[
 const NEXT_STEPS = [
   {
     title: 'Saved as a draft',
-    body: 'The case number, your branch and the receiving department are set automatically.',
+    body: 'The case number and the receiving department are set automatically.',
   },
   {
     title: 'Attach documents',

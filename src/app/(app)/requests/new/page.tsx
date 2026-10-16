@@ -1,6 +1,9 @@
 import { TriangleAlert } from 'lucide-react';
 import { requireActor } from '@/server/application/actor';
-import { listActiveRequestTypes } from '@/server/application/case-service';
+import {
+  listActiveRequestTypes,
+  loadRequestingUnitOptions,
+} from '@/server/application/case-service';
 import { AccessDenied } from '@/components/admin/access-denied';
 import { PageHero } from '@/components/layout/page-hero';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -18,14 +21,17 @@ export default async function NewRequestPage() {
 
   // Request types are configuration, so the form offers exactly what an
   // administrator has enabled - never a hard-coded list (spec section 37).
-  const requestTypes = await listActiveRequestTypes();
+  const [requestTypes, requesting] = await Promise.all([
+    listActiveRequestTypes(),
+    loadRequestingUnitOptions(actor),
+  ]);
 
   return (
     <div className="space-y-6">
       <PageHero
         eyebrow="Valuation"
         title="New Valuation Request"
-        subtitle="Raise a request for the Property Valuation Department. Your branch, the receiving department and the case number are set automatically."
+        subtitle="Raise a valuation request on behalf of the branch or department asking for it. The receiving department and the case number are set automatically."
       />
 
       {requestTypes.length === 0 ? (
@@ -37,7 +43,7 @@ export default async function NewRequestPage() {
           </AlertDescription>
         </Alert>
       ) : (
-        <RequestForm requestTypes={requestTypes} />
+        <RequestForm requestTypes={requestTypes} requesting={requesting} />
       )}
     </div>
   );

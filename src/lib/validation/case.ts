@@ -7,10 +7,12 @@ import { CASE_STATUSES } from '@/server/domain/shared/enums';
  * Shared with the client form for immediate feedback, but the server parses
  * independently rather than trusting that the client did (rule 4).
  *
- * Note what is *not* here: case number, status, department, requesting
- * organisation and the requester are all derived server-side. Accepting them
- * from the form would be a mass-assignment hole — a Process Owner could file a
- * case against another branch, or open one directly in an approved state.
+ * Note what is *not* here: case number, status, department and the requester
+ * are all derived server-side. Accepting them from the form would be a
+ * mass-assignment hole — a case could be opened directly in an approved state.
+ * The requesting unit is accepted, but the server decides whether this raiser
+ * may choose it: a raiser in a branch or district always files under their own
+ * unit.
  */
 
 const personName = z
@@ -54,6 +56,14 @@ export const createCaseSchema = z.object({
 
   /** Required for re-estimation, appeal and progress; enforced server-side. */
   priorCaseNumber: optionalText(40),
+
+  /** The branch or department the request is for; required server-side when the raiser chooses it. */
+  requestingOrgId: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v === '' ? undefined : v))
+    .pipe(z.string().uuid('Choose the requesting branch or department from the list.').optional()),
 });
 export type CreateCaseInputSchema = z.infer<typeof createCaseSchema>;
 

@@ -91,6 +91,72 @@ export interface CreateCaseInput {
   purpose?: string | null;
   remarks?: string | null;
   priorCaseNumber?: string | null;
+  /** The branch or department the request is raised for; see `resolveRequestingUnit`. */
+  requestingOrgId?: string | null;
+}
+
+/**
+ * Whether this raiser chooses the branch or department a request is for.
+ *
+ * Requests are entered by Property Valuation Department staff - who have no
+ * unit, or a head-office one - on behalf of the requesting body, so they choose
+ * it. A raiser who sits in a branch or district files under their own unit
+ * only, so one branch can never file a case against another.
+ */
+async function choosesRequestingUnit(actor: Actor): Promise<boolean> {
+  if (!actor.organizationId) return true;
+  const own = await prisma.organization.findUnique({
+    where: { id: actor.organizationId },
+    select: { type: true },
+  });
+  return own?.type === 'HEAD_OFFICE_UNIT';
+}
+
+async function resolveRequestingUnit(actor: Actor, chosenId: string | null | undefined) {
+  if (!(await choosesRequestingUnit(actor))) {
+    if (chosenId && chosenId !== actor.organizationId) {
+      throw new BusinessRuleError(
+        'REQUESTING_UNIT_FIXED',
+        'A request raised from a branch or district is filed under that unit.',
+      );
+    }
+    return actor.organizationId!;
+  }
+  if (!chosenId) {
+    throw new BusinessRuleError(
+      'REQUESTING_UNIT_REQUIRED',
+      'Choose the branch or department requesting this valuation.',
+    );
+  }
+  const unit = await prisma.organization.findUnique({
+    where: { id: chosenId },
+    select: { id: true, isActive: true },
+  });
+  if (!unit?.isActive) {
+    throw new BusinessRuleError(
+      'UNKNOWN_REQUESTING_UNIT',
+      'Choose the requesting branch or department from the list.',
+    );
+  }
+  return unit.id;
+}
+
+/** What New Request offers for the requesting unit: a choice, or the raiser's own unit. */
+export async function loadRequestingUnitOptions(actor: Actor) {
+  assertPermission(actor, PERMISSIONS.CASE_CREATE);
+  if (!(await choosesRequestingUnit(actor))) {
+    const own = await prisma.organization.findUniqueOrThrow({
+      where: { id: actor.organizationId! },
+      select: { name: true },
+    });
+    return { choose: false as const, ownUnit: own.name, units: [] };
+  }
+  const units = await prisma.organization.findMany({
+    where: { isActive: true },
+    orderBy: [{ type: 'asc' }, { name: 'asc' }],
+    select: { id: true, name: true, type: true },
+  });
+  return { choose: true as const, ownUnit: null, units };
 }
 
 export async function createCase(
@@ -100,12 +166,7 @@ export async function createCase(
 ): Promise<{ id: string; caseNumber: string }> {
   assertPermission(actor, PERMISSIONS.CASE_CREATE);
 
-  if (!actor.organizationId) {
-    throw new BusinessRuleError(
-      'NO_ORGANISATION',
-      'Your account is not attached to a branch or unit, so it cannot raise a request. Ask an administrator to set your organisation.',
-    );
-  }
+  const requestingOrgId = await resolveRequestingUnit(actor, input.requestingOrgId);
 
   const requestType = await prisma.requestType.findUnique({
     where: { code: input.requestTypeCode },
@@ -171,7 +232,7 @@ export async function createCase(
         requestTypeId: requestType.id,
         discipline: input.discipline,
         status: 'DRAFT',
-        requestingOrgId: actor.organizationId!,
+        requestingOrgId,
         departmentId: department.id,
         requestedById: actor.id,
         applicantName: input.applicantName,
